@@ -24,3 +24,53 @@ model Usuario {
 
   @@map("usuarios") 
 }
+
+model Categoria {
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  descripcion String?
+  equipos     Equipo[]
+
+  @@map("categorias")
+}
+
+model Equipo {
+  id             Int         @id @default(autoincrement())
+  codigo_interno String      @unique
+  marca          String?
+  estado         String
+  ubicacion      String?
+  descripcion    String?
+  activo         Boolean     @default(true)
+  
+  id_categoria   Int
+  categoria      Categoria   @relation(fields: [id_categoria], references: [id])
+
+  maquina        Maquina?
+  aditamento     Aditamento?
+
+  @@map("equipos")
+}
+
+model Maquina {
+  equipo_id          Int          @id
+  modelo             String
+  anio               Int
+  n_serie            String
+  horas_motor_acutal Int
+  
+  equipo             Equipo       @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
+  aditamentos        Aditamento[]
+
+  @@map("maquinas")
+}
+
+model Aditamento {
+  equipo_id  Int      @id
+  equipo     Equipo   @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
+  
+  maquina_id Int?
+  maquina    Maquina? @relation(fields: [maquina_id], references: [equipo_id])
+
+  @@map("aditamentos")
+}

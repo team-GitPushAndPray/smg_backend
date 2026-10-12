@@ -7,8 +7,12 @@ async function main() {
 
   app.setGlobalPrefix('api');
 
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  const allowedOrigins = frontendUrl.split(',');
+
   app.enableCors({
-    origin: ['http://localhost:5173'],
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

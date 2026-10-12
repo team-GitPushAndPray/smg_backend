@@ -7,7 +7,15 @@ async function main() {
 
   app.setGlobalPrefix('api');
 
-  app.enableCors();
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  const allowedOrigins = frontendUrl.split(',');
+
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

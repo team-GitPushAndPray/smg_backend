@@ -8,7 +8,6 @@ async function main() {
   app.setGlobalPrefix('api');
 
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-
   const allowedOrigins = frontendUrl.split(',');
 
   app.enableCors({
@@ -28,6 +27,10 @@ async function main() {
     })
   );
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT || 3000);
 }
-await main();
+
+main().catch((err) => {
+  console.error('Error al iniciar el servidor:', err);
+  process.exit(1);
+});

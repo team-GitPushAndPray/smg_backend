@@ -75,3 +75,24 @@ model Aditamento {
 
   @@map("aditamentos")
 }
+
+enum CargoVendedor {
+  LOGISTICA
+  VENTAS
+  ALQUILERES
+  REPUESTOS
+}
+
+model Vendedor {
+  id          String        @id @default(uuid())
+  nombre      String
+  cargo       CargoVendedor
+  descripcion String?       @db.VarChar(255)
+  foto        String?       
+  contacto    String        
+  activo      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("vendedores")
+}

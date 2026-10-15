@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -54,24 +54,20 @@ model Equipo {
 }
 
 model Maquina {
-  equipo_id          Int          @id
+  equipo_id          Int    @id
   modelo             String
   anio               Int
   n_serie            String
-  horas_motor_acutal Int
+  horas_motor_actual Int  
   
-  equipo             Equipo       @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
-  aditamentos        Aditamento[]
+  equipo             Equipo @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
 
   @@map("maquinas")
 }
 
 model Aditamento {
-  equipo_id  Int      @id
-  equipo     Equipo   @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
-  
-  maquina_id Int?
-  maquina    Maquina? @relation(fields: [maquina_id], references: [equipo_id])
+  equipo_id Int    @id
+  equipo    Equipo @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
 
   @@map("aditamentos")
 }
@@ -84,7 +80,7 @@ enum CargoVendedor {
 }
 
 model Vendedor {
-  id          String        @id @default(uuid())
+  id          Int           @id @default(autoincrement())
   nombre      String
   cargo       CargoVendedor
   descripcion String?       @db.VarChar(255)
@@ -92,7 +88,7 @@ model Vendedor {
   contacto    String        
   activo      Boolean       @default(true)
   createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  updatedAt   DateTime      @default(now()) @updatedAt 
 
   @@map("vendedores")
 }

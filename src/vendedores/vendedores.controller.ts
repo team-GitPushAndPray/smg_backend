@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe } from '@nestjs/common';
 import { VendedoresService } from './vendedores.service.js';
 import { CreateVendedoresDto } from './dto/create-vendedores.dto.js';
 import { UpdateVendedoresDto } from './dto/update-vendedores.dto.js';
@@ -34,7 +34,7 @@ export class VendedoresController {
 
   @Get(':id')
   // @UseGuards(JwtAuthGuard) <- Lo activaremos en la issue de Auth
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.vendedoresService.findOne(id);
   }
 
@@ -42,7 +42,7 @@ export class VendedoresController {
   @Patch(':id')
   // @UseGuards(JwtAuthGuard) <- Lo activaremos en la issue de Auth
   async update(
-    @Param('id', ParseUUIDPipe) id: string, 
+    @Param('id', ParseIntPipe) id: number, 
     @Body() updateVendedoresDto: UpdateVendedoresDto
   ) {
     await this.vendedoresService.update(id, updateVendedoresDto);
@@ -53,7 +53,7 @@ export class VendedoresController {
 
   @Delete(':id')
   // @UseGuards(JwtAuthGuard) <- Lo activaremos en la issue de Auth
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Param('id', ParseIntPipe) id: number) {
     await this.vendedoresService.remove(id);
     return { message: 'Vendedor eliminado correctamente' };
   }

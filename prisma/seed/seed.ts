@@ -39,7 +39,7 @@ async function main() {
           modelo: 'S530',
           anio: 2017,
           n_serie: 'B42811183',
-          horas_motor_acutal: 4230,
+          horas_motor_actual: 4230,
         },
       },
     },

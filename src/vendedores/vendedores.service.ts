@@ -50,7 +50,7 @@ export class VendedoresService {
   }
 
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     const vendedor = await this.prisma.vendedor.findUnique({
       where: { id },
     });
@@ -60,7 +60,7 @@ export class VendedoresService {
   }
 
 
-  async update(id: string, updateVendedoresDto: UpdateVendedoresDto) {
+  async update(id: number, updateVendedoresDto: UpdateVendedoresDto) {
     await this.findOne(id);
 
     try {
@@ -75,7 +75,7 @@ export class VendedoresService {
   }
 
 
-  async remove(id: string) {
+  async remove(id: number) {
     await this.findOne(id);
 
     // Borrado Lógico

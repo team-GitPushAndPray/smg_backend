@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { CatalogoService } from './catalogo.service.js';
 import { FiltroCatalogoDto } from './dto/filtro-catalogo.dto.js';
 import { CatalogoEquipoEntity } from './entities/catalogo-equipo.entity.js'
@@ -14,7 +14,7 @@ export class CatalogoController {
     return this.catalogoService.findAll(filtros)    
   }
 
-  @Get(':id')
+  @Get('id=:id')
   async findOne(@Param('id', ParseIntPipe) id: number,
 ) : Promise<CatalogoEquipoEntity> {
     return this.catalogoService.findOne(id);

@@ -7,9 +7,7 @@ export class EquiposController {
 
   // Endpoint interno/admin para ver un equipo por su ID estándar (/equipos/:id)
   @Get(':id')
-  // @UseGuards(JwtAuthGuard)
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.equiposService.findOnePublic(id);
   }
-
 }

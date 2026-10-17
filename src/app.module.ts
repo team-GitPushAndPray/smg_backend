@@ -9,6 +9,7 @@ import { PrismaService } from './prisma/prisma.service.js';
 import { EquiposModule } from './equipos/equipos.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
+import { ModulosGuard } from './auth/guards/modulos.guard.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -19,6 +20,10 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ModulosGuard,
     }
   ],
   exports: [PrismaService]

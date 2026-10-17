@@ -10,11 +10,23 @@ import { EquiposModule } from './equipos/equipos.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { ModulosGuard } from './auth/guards/modulos.guard.js';
+import { ModulosModule } from './modulos/modulos.module.js';
+import { RolesModule } from './roles/roles.module.js';
+import { UsuariosModule } from './usuarios/usuarios.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
-  imports: [ PrismaModule, CatalogoModule, VendedoresModule, EquiposModule, AuthModule],
+  imports: [
+    PrismaModule,
+    CatalogoModule, 
+    VendedoresModule, 
+    EquiposModule, 
+    AuthModule, 
+    ModulosModule, 
+    RolesModule, 
+    UsuariosModule
+  ],
   controllers: [AppController],
   providers: [PrismaService,
     {

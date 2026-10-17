@@ -8,8 +8,42 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model Rol {
+  id          Int         @id @default(autoincrement())
+  nombre      String      @unique
+  descripcion String?
+  activo      Boolean     @default(true)
+  es_sistema  Boolean     @default(false)
+
+  usuarios    Usuario[]
+  modulos     RolModulo[]
+
+  @@map("roles")
+}
+
+model Modulo {
+  id     Int         @id @default(autoincrement())
+  codigo String      @unique
+  nombre String
+
+  roles  RolModulo[]
+
+  @@map("modulos")
+}
+
+model RolModulo {
+  rol_id    Int
+  modulo_id Int
+
+  rol       Rol    @relation(fields: [rol_id], references: [id], onDelete: Cascade)
+  modulo    Modulo @relation(fields: [modulo_id], references: [id], onDelete: Cascade)
+
+  @@id([rol_id, modulo_id])
+  @@map("rol_modulo")
+}
+
 model Usuario {
-  id               String    @id @default(uuid())
+  id               Int    @id @default(autoincrement())
   rol_id           Int       
   nombre           String
   apellido         String
@@ -22,6 +56,8 @@ model Usuario {
 
   creado_en        DateTime  @default(now())
   actualizado_en   DateTime  @updatedAt
+
+  rol              Rol       @relation(fields: [rol_id], references: [id])
 
   @@map("usuarios") 
 }

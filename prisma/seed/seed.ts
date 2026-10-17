@@ -50,16 +50,33 @@ async function main() {
   // 3. Crear Rol: Taller (es_sistema: false)
   const rolTaller = await prisma.rol.upsert({
     where: { nombre: 'Taller' },
-    update: {
-      descripcion: 'Acceso operativo al módulo de máquinas',
-      activo: true,
-      es_sistema: false,
-    },
+    update: {},
     create: {
       nombre: 'Taller',
-      descripcion: 'Acceso operativo al módulo de máquinas',
-      activo: true,
+      descripcion: 'Personal técnico y de mantenimiento',
       es_sistema: false,
+      activo: true,
+      modulos: {
+        create: [
+          { modulo: { connect: { codigo: 'maquinas' } } },
+          // Nota: NO tiene 'configuracion' ni 'vendedores'
+        ],
+      },
+    },
+  });
+
+  const passwordTaller = await bcrypt.hash('Taller123!', 10);
+
+  await prisma.usuario.upsert({
+    where: { email: 'taller@smg.com' },
+    update: {},
+    create: {
+      nombre: 'Operario',
+      apellido: 'Taller',
+      email: 'taller@smg.com',
+      password: passwordTaller,
+      rol_id: rolTaller.id,
+      activo: true,
     },
   });
 
@@ -147,18 +164,18 @@ async function main() {
   const catMinicargadora = await prisma.categoria.upsert({
     where: { nombre: 'minicargadora' },
     update: {},
-    create: { 
-      nombre: 'minicargadora', 
-      descripcion: 'descripcion de la minicargadora' 
+    create: {
+      nombre: 'minicargadora',
+      descripcion: 'descripcion de la minicargadora'
     },
   });
 
   const catBalde = await prisma.categoria.upsert({
     where: { nombre: 'balde' },
     update: {},
-    create: { 
-      nombre: 'balde', 
-      descripcion: 'descripcion del balde' 
+    create: {
+      nombre: 'balde',
+      descripcion: 'descripcion del balde'
     },
   });
 
@@ -189,7 +206,7 @@ async function main() {
     update: {},
     create: {
       codigo_interno: 'B30',
-      marca: null, 
+      marca: null,
       estado: 'disponible',
       ubicacion: 'base',
       descripcion: 'asd',

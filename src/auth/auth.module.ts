@@ -5,6 +5,7 @@ import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
+import { ModulosGuard } from './guards/modulos.guard.js';
 
 
 @Module({
@@ -22,7 +23,7 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtStrategy, PassportModule, JwtModule],
+  providers: [AuthService, JwtStrategy, ModulosGuard],
+  exports: [AuthService, JwtStrategy, PassportModule, JwtModule, ModulosGuard],
 })
 export class AuthModule {}

@@ -3,7 +3,9 @@ import { VendedoresService } from './vendedores.service.js';
 import { CreateVendedoresDto } from './dto/create-vendedores.dto.js';
 import { UpdateVendedoresDto } from './dto/update-vendedores.dto.js';
 import { Public } from '../auth/decorators/public.decorator.js';
+import { RequiereModulo } from '../auth/decorators/requiere-modulo.decorator.js';
 
+@RequiereModulo('vendedores')
 @Controller('vendedores')
 export class VendedoresController {
   constructor(private readonly vendedoresService: VendedoresService) {}

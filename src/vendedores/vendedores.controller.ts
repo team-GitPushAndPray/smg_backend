@@ -3,9 +3,9 @@ import { VendedoresService } from './vendedores.service.js';
 import { CreateVendedoresDto } from './dto/create-vendedores.dto.js';
 import { UpdateVendedoresDto } from './dto/update-vendedores.dto.js';
 import { Public } from '../auth/decorators/public.decorator.js';
-import { RequiereModulo } from '../auth/decorators/requiere-modulo.decorator.js';
+import { Modulo } from '../auth/decorators/modulo.decorator.js';
 
-@RequiereModulo('vendedores')
+@Modulo('VENDEDORES')
 @Controller('vendedores')
 export class VendedoresController {
   constructor(private readonly vendedoresService: VendedoresService) {}
@@ -20,6 +20,7 @@ export class VendedoresController {
 
 
   // RUTAS ADMIN (Protegidas por el JwtAuthGuard global)
+  @Modulo('VENDEDORES', { editar: true })
   @Post()
   async create(@Body() createVendedoresDto:CreateVendedoresDto) {
     await this.vendedoresService.create(createVendedoresDto);
@@ -39,6 +40,7 @@ export class VendedoresController {
   }
 
 
+  @Modulo('VENDEDORES', { editar: true })
   @Patch(':id')
   async update(
     @Param('id', ParseIntPipe) id: number, 

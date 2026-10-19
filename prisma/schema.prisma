@@ -95,7 +95,8 @@ model Maquina {
   modelo             String
   anio               Int
   n_serie            String
-  horas_motor_actual Int  
+  horas_motor_actual Int
+  horas_actualizadas_en DateTime? @db.Timestamp()  
   
   equipo             Equipo @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
 

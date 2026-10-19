@@ -1,51 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { EquiposService } from '../equipos/equipos.service.js';
 import { FiltroCatalogoDto } from './dto/filtro-catalogo.dto.js';
+
 
 @Injectable()
 export class CatalogoService {
-  constructor(private prisma: PrismaService) {}
+
+  constructor(private equiposService: EquiposService) {}
 
   async findAll(filtros: FiltroCatalogoDto) {
     const { categoriaId } = filtros;
+    const extraWhere = categoriaId ? { id_categoria: categoriaId } : {};
 
-    return this.prisma.equipo.findMany({
-      where: {
-        estado: 'disponible',
-        activo: true,
-        ...(categoriaId && { id_categoria: categoriaId }),
-      },
-      include: {
-        categoria: true,
-        maquina: true,
-        aditamento: true,
-      },
-      orderBy: {
-        id: 'desc', 
-      }
-    });
+    return this.equiposService.findManyCatalogo(extraWhere);
   }
 
+
   async findOne(id: number) {
-    const equipo = await this.prisma.equipo.findFirst({
-      where: {
-        id: id,
-        estado: 'disponible',
-        activo: true,
-      },
-      include: {
-        categoria: true,
-        maquina: true,
-        aditamento: true,
-      },
-    });
 
-    if (!equipo) {
-      throw new NotFoundException(
-        `El equipo #${id} no existe o no se encuentra disponible en el catálogo en este momento.`,
-      );
+    try {
+      return await this.equiposService.findOneCatalogo(id);
+    } catch (error) {
+      throw new NotFoundException(`El equipo #${id} no existe o no se encuentra disponible en el catálogo en este momento.`);
     }
-
-    return equipo;
   }
 }

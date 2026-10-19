@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { META_MODULOS } from '../decorators/requiere-modulo.decorator.js';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
+import { MODULO_KEY, ModuloMetadata } from '../decorators/modulo.decorator.js';
 import { UsuarioAuthEntity } from '../entities/usuario-auth.entity.js';
 
 @Injectable()
@@ -14,35 +14,38 @@ export class ModulosGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (isPublic) {
-      return true;
-    }
+    if (isPublic) return true;
 
-    const modulosRequeridos: string[] = this.reflector.getAllAndOverride(
-      META_MODULOS,
-      [context.getHandler(), context.getClass()],
-    );
+    const requisito = this.reflector.getAllAndOverride<ModuloMetadata>(MODULO_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
-    if (!modulosRequeridos || modulosRequeridos.length === 0) {
-      return true;
-    }
+    if (!requisito) return true;
 
     const request = context.switchToHttp().getRequest();
     const user = request.user as UsuarioAuthEntity;
 
-    if (!user || !Array.isArray(user.modulos)) {
+    if (!user) throw new ForbiddenException('Usuario no autenticado');
+
+    if (user.rol?.nombre === 'superAdmin') return true;
+
+
+    if (!Array.isArray(user.modulos)) throw new ForbiddenException('No tienes permisos asignados');
+
+    const moduloAsignado = user.modulos.find(
+      (m) => m.codigo === requisito.codigo
+    );
+
+    if (!moduloAsignado) {
       throw new ForbiddenException(
-        'No tienes permisos para acceder a este módulo',
+        `Acceso denegado: se requiere permiso en el módulo [${requisito.codigo}]`
       );
     }
 
-    const tienePermiso = modulosRequeridos.some((modulo: string) =>
-      user.modulos.includes(modulo),
-    );
-
-    if (!tienePermiso) {
+    if (requisito.editar && !moduloAsignado.puedeEditar) {
       throw new ForbiddenException(
-        `Acceso denegado: se requiere permiso en el módulo [${modulosRequeridos.join(' o ')}]`,
+        `Acceso denegado: se requiere permiso de edición en el módulo [${requisito.codigo}]`
       );
     }
 

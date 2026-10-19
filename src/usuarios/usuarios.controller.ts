@@ -2,10 +2,10 @@ import { Controller, Get, Post, Body, Patch, Param, ParseIntPipe, Req } from '@n
 import { UsuariosService } from './usuarios.service.js';
 import { CreateUsuarioDto } from './dto/create-usuario.dto.js';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto.js';
-import { RequiereModulo } from '../auth/decorators/requiere-modulo.decorator.js';
+import { Modulo } from '../auth/decorators/modulo.decorator.js';
 import { UpdateEstadoUsuarioDto } from './dto/update-estado-usuario.dto.js';
 
-@RequiereModulo('configuracion')
+@Modulo('CONFIGURACION')
 @Controller('usuarios')
 export class UsuariosController {
 
@@ -24,12 +24,14 @@ export class UsuariosController {
   }
 
 
+  @Modulo('CONFIGURACION', { editar: true })
   @Post()
   create(@Body() createUsuarioDto: CreateUsuarioDto) {
     return this.usuariosService.create(createUsuarioDto);
   }
 
 
+  @Modulo('CONFIGURACION', { editar: true })
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number, 
@@ -38,6 +40,7 @@ export class UsuariosController {
   }
 
 
+  @Modulo('CONFIGURACION', { editar: true })
   @Patch(':id/estado')
   updateEstado(
     @Param('id', ParseIntPipe) id: number,

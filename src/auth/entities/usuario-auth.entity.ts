@@ -1,10 +1,9 @@
-import { Usuario, Rol, Modulo } from '@prisma/client';
+import { Usuario, Rol, Modulo, RolModulo } from '@prisma/client';
 
-// Tipo que permite que password sea opcional (ya que lo omitimos con Prisma)
 type UsuarioConRelaciones = Omit<Usuario, 'password'> & {
   password?: string;
   rol: (Rol & {
-    modulos: ( { modulo: Modulo } )[];
+    modulos: (RolModulo & { modulo: Modulo } )[];
   }) | null;
 };
 
@@ -17,7 +16,10 @@ export class UsuarioAuthEntity {
     id: number;
     nombre: string;
   };
-  modulos: string[];
+  modulos: Array<{
+    codigo: string;
+    puedeEditar: boolean;
+  }>;
 
   constructor(usuario: UsuarioConRelaciones) {
     this.id = usuario.id;
@@ -30,6 +32,9 @@ export class UsuarioAuthEntity {
       nombre: usuario.rol?.nombre ?? '',
     };
 
-    this.modulos = usuario.rol?.modulos?.map((rm) => rm.modulo.codigo) ?? [];
+    this.modulos = usuario.rol?.modulos?.map((rm) => ({
+      codigo: rm.modulo.codigo,
+      puedeEditar: rm.puede_editar,
+    })) ?? [];
   }
 }

@@ -17,7 +17,7 @@ export type EstadoEquipo = (typeof ESTADOS_EQUIPO)[number];
 
 export class FiltrosEquiposDto extends PaginationDto {
 
-    @IsOptional()
+  @IsOptional()
   @IsString()
   search?: string;
 

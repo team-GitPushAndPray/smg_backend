@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateRolDto } from './dto/create-rol.dto.js';
 import { RolEntity } from './entities/rol.entity.js';
 import { UpdateRolDto } from './dto/update-rol.dto.js';
-import { UpdateRolModulosDto } from './dto/update-rol.modulos.dto.js';
+import { UpdateRolModulosDto } from './dto/update-rol-modulos.dto.js';
 
 
 @Injectable()
@@ -77,23 +77,37 @@ export class RolesService {
   async replaceModulos(id: number, dto: UpdateRolModulosDto): Promise<RolEntity> {
     await this.obtenerRolYValidarNoSistema(id);
 
-    // Eliminar duplicados por si el front envía ["maquinas", "maquinas"]
-    const codigosUnicos = Array.from(new Set(dto.modulos));
+    // 1. Extraer los códigos en mayúsculas
+    const codigosSolicitados = dto.modulos.map((m) => m.codigo.trim().toUpperCase());
 
+    // 2. Comprobar duplicados comparando la longitud original con el Set de strings
+    const codigosUnicos = new Set(codigosSolicitados);
+    if (codigosUnicos.size !== codigosSolicitados.length) {
+      throw new BadRequestException('No se permiten códigos de módulo duplicados en la solicitud');
+    }
+
+    // 3. Verificar que todos los códigos existan en la tabla modulo
     const modulosEncontrados = await this.prisma.modulo.findMany({
-      where: { codigo: { in: codigosUnicos }},
+      where: { codigo: { in: Array.from(codigosUnicos) } },
     });
 
-    if (modulosEncontrados.length !== codigosUnicos.length) throw new BadRequestException('Uno o más códigos de módulo enviados no existen');
+    if (modulosEncontrados.length !== codigosUnicos.size) {
+      const encontradosSet = new Set(modulosEncontrados.map((m) => m.codigo.toUpperCase()));
+      const invalidos = codigosSolicitados.filter((c) => !encontradosSet.has(c));
+      throw new BadRequestException(`Los siguientes códigos de módulo no existen: ${invalidos.join(', ')}`);
+    }
 
-    // Reemplazo transaccional: borra asignaciones previas y crea las nuevas
+    const mapaModulosBd = new Map(modulosEncontrados.map((m) => [m.codigo.toUpperCase(), m.id]));
+
+    // 4. Reemplazo transaccional
     const rolActualizado = await this.prisma.rol.update({
       where: { id },
       data: {
         modulos: {
           deleteMany: {},
-          create: modulosEncontrados.map((m) => ({
-            modulo: { connect: { id: m.id }},
+          create: dto.modulos.map((item) => ({
+            puede_editar: item.puedeEditar,
+            modulo: { connect: { id: mapaModulosBd.get(item.codigo.trim().toUpperCase())! } },
           })),
         },
       },

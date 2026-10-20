@@ -15,6 +15,19 @@ async function main() {
 
   console.log('🌱 Iniciando seed de seguridad y permisos...');
 
+  // 1. Limpieza de relaciones primero para no trabar borrados por foreign keys
+  await prisma.rolModulo.deleteMany({});
+
+  // 2. Eliminar posibles duplicados viejos en minúscula
+  await prisma.modulo.deleteMany({
+    where: {
+      codigo: {
+        in: ['maquinas', 'configuracion', 'vendedores'],
+      },
+    },
+  });
+
+  // 3. Upsert canónico con códigos en MAYÚSCULAS
   const modMaquinas = await prisma.modulo.upsert({
     where: { codigo: 'MAQUINAS' },
     update: { nombre: 'Máquinas' },
@@ -33,6 +46,7 @@ async function main() {
     create: { codigo: 'VENDEDORES', nombre: 'Vendedores' },
   });
 
+  // 4. Roles
   const rolesData = [
     {
       nombre: 'superAdmin',
@@ -86,8 +100,7 @@ async function main() {
     rolesMap[r.nombre] = rol;
   }
 
-  await prisma.rolModulo.deleteMany({});
-
+  // 5. Permisos para MAQUINAS
   const permisosMaquinas = [
     { rolNombre: 'administrador', puede_editar: true },
     { rolNombre: 'logistica', puede_editar: true },
@@ -106,6 +119,7 @@ async function main() {
     });
   }
 
+  // 6. Asignar CONFIGURACION y VENDEDORES a 'administrador' con puede_editar = true
   await prisma.rolModulo.create({
     data: {
       rol_id: rolesMap['administrador'].id,
@@ -114,6 +128,15 @@ async function main() {
     },
   });
 
+  await prisma.rolModulo.create({
+    data: {
+      rol_id: rolesMap['administrador'].id,
+      modulo_id: modVendedores.id,
+      puede_editar: true,
+    },
+  });
+
+  // 7. Usuarios del sistema
   const hashedSuperAdminPassword = await bcrypt.hash(superAdminPassword, 10);
 
   await prisma.usuario.upsert({
@@ -135,13 +158,29 @@ async function main() {
 
   const defaultTestPass = await bcrypt.hash('Test1234!', 10);
 
-  // Usuario con permiso de EDICIÓN en MAQUINAS (logistica)
-await prisma.usuario.upsert({
-    where: { email: 'logistica@smg.com' },
-    update: { 
-      rol_id: rolesMap['logistica'].id, 
+  await prisma.usuario.upsert({
+    where: { email: 'admin@smg.com' },
+    update: {
+      rol_id: rolesMap['administrador'].id,
       activo: true,
-      password: defaultTestPass
+      password: defaultTestPass,
+    },
+    create: {
+      nombre: 'Usuario',
+      apellido: 'Administrador',
+      email: 'admin@smg.com',
+      password: defaultTestPass,
+      rol_id: rolesMap['administrador'].id,
+      activo: true,
+    },
+  });
+
+  await prisma.usuario.upsert({
+    where: { email: 'logistica@smg.com' },
+    update: {
+      rol_id: rolesMap['logistica'].id,
+      activo: true,
+      password: defaultTestPass,
     },
     create: {
       nombre: 'Usuario',
@@ -153,10 +192,13 @@ await prisma.usuario.upsert({
     },
   });
 
-  // Usuario de SOLO LECTURA en MAQUINAS (taller)
   await prisma.usuario.upsert({
     where: { email: 'taller@smg.com' },
-    update: { rol_id: rolesMap['taller'].id, activo: true },
+    update: {
+      rol_id: rolesMap['taller'].id,
+      activo: true,
+      password: defaultTestPass,
+    },
     create: {
       nombre: 'Usuario',
       apellido: 'Taller',

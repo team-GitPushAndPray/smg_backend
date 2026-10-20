@@ -5,7 +5,7 @@ export class ModuloEntity {
 
     constructor(partial: any) {
         this.id = partial.id;
-        this.codigo = partial.id;
+        this.codigo = partial.codigo.trim().toUpperCase();
         this.nombre = partial.nombre;   
     }
 

@@ -4,227 +4,217 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando seed de Acceso y Configuración...');
+  const superAdminEmail = process.env.SUPERADMIN_EMAIL;
+  const superAdminPassword = process.env.SUPERADMIN_PASSWORD;
 
-  // 1. Crear Módulos (usando upsert por su código único)
-  const modMaquinas = await prisma.modulo.upsert({
-    where: { codigo: 'maquinas' },
-    update: { nombre: 'Máquinas' },
-    create: { codigo: 'maquinas', nombre: 'Máquinas' },
+  if (!superAdminEmail || !superAdminPassword) {
+    throw new Error(
+      'Faltan las variables de entorno SUPERADMIN_EMAIL o SUPERADMIN_PASSWORD en el archivo .env',
+    );
+  }
+
+  console.log('🌱 Iniciando seed de seguridad y permisos...');
+
+  // 1. Limpieza de relaciones primero para no trabar borrados por foreign keys
+  await prisma.rolModulo.deleteMany({});
+
+  // 2. Eliminar posibles duplicados viejos en minúscula
+  await prisma.modulo.deleteMany({
+    where: {
+      codigo: {
+        in: ['maquinas', 'configuracion', 'vendedores'],
+      },
+    },
   });
 
-  const modVendedores = await prisma.modulo.upsert({
-    where: { codigo: 'vendedores' },
-    update: { nombre: 'Vendedores' },
-    create: { codigo: 'vendedores', nombre: 'Vendedores' },
+  // 3. Upsert canónico con códigos en MAYÚSCULAS
+  const modMaquinas = await prisma.modulo.upsert({
+    where: { codigo: 'MAQUINAS' },
+    update: { nombre: 'Máquinas' },
+    create: { codigo: 'MAQUINAS', nombre: 'Máquinas' },
   });
 
   const modConfiguracion = await prisma.modulo.upsert({
-    where: { codigo: 'configuracion' },
+    where: { codigo: 'CONFIGURACION' },
     update: { nombre: 'Configuración' },
-    create: { codigo: 'configuracion', nombre: 'Configuración' },
+    create: { codigo: 'CONFIGURACION', nombre: 'Configuración' },
   });
 
-  console.log('✅ Módulos creados:', [
-    modMaquinas.codigo,
-    modVendedores.codigo,
-    modConfiguracion.codigo,
-  ]);
-
-  // 2. Crear Rol: Administrador (es_sistema: true)
-  const rolAdmin = await prisma.rol.upsert({
-    where: { nombre: 'Administrador' },
-    update: {
-      descripcion: 'Acceso total al sistema, incluida la configuración',
-      activo: true,
-      es_sistema: true,
-    },
-    create: {
-      nombre: 'Administrador',
-      descripcion: 'Acceso total al sistema, incluida la configuración',
-      activo: true,
-      es_sistema: true,
-    },
+  const modVendedores = await prisma.modulo.upsert({
+    where: { codigo: 'VENDEDORES' },
+    update: { nombre: 'Vendedores' },
+    create: { codigo: 'VENDEDORES', nombre: 'Vendedores' },
   });
 
-  // 3. Crear Rol: Taller (es_sistema: false)
-  const rolTaller = await prisma.rol.upsert({
-    where: { nombre: 'Taller' },
-    update: {},
-    create: {
-      nombre: 'Taller',
-      descripcion: 'Personal técnico y de mantenimiento',
+  // 4. Roles
+  const rolesData = [
+    {
+      nombre: 'superAdmin',
+      descripcion: 'Acceso total al sistema sin restricciones',
+      es_sistema: true,
+    },
+    {
+      nombre: 'administrador',
+      descripcion: 'Administración general del sistema',
       es_sistema: false,
-      activo: true,
-      modulos: {
-        create: [
-          { modulo: { connect: { codigo: 'maquinas' } } },
-          // Nota: NO tiene 'configuracion' ni 'vendedores'
-        ],
-      },
     },
-  });
-
-  const passwordTaller = await bcrypt.hash('Taller123!', 10);
-
-  await prisma.usuario.upsert({
-    where: { email: 'taller@smg.com' },
-    update: {},
-    create: {
-      nombre: 'Operario',
-      apellido: 'Taller',
-      email: 'taller@smg.com',
-      password: passwordTaller,
-      rol_id: rolTaller.id,
-      activo: true,
+    {
+      nombre: 'logistica',
+      descripcion: 'Gestión logística y movimiento de máquinas',
+      es_sistema: false,
     },
-  });
+    {
+      nombre: 'servicio_tecnico',
+      descripcion: 'Soporte y servicio técnico en campo',
+      es_sistema: false,
+    },
+    {
+      nombre: 'taller',
+      descripcion: 'Operaciones y mantenimiento en taller',
+      es_sistema: false,
+    },
+    {
+      nombre: 'personal',
+      descripcion: 'Consulta general para personal interno',
+      es_sistema: false,
+    },
+  ];
 
-  console.log('✅ Roles creados:', [rolAdmin.nombre, rolTaller.nombre]);
+  const rolesMap: Record<string, any> = {};
 
-  // 4. Vincular Roles con Módulos en rol_modulo
-  // Administrador -> Todos los módulos
-  const todosLosModulos = [modMaquinas, modVendedores, modConfiguracion];
-  for (const mod of todosLosModulos) {
-    await prisma.rolModulo.upsert({
-      where: {
-        rol_id_modulo_id: {
-          rol_id: rolAdmin.id,
-          modulo_id: mod.id,
-        },
+  for (const r of rolesData) {
+    const rol = await prisma.rol.upsert({
+      where: { nombre: r.nombre },
+      update: {
+        descripcion: r.descripcion,
+        es_sistema: r.es_sistema,
+        activo: true,
       },
-      update: {},
       create: {
-        rol_id: rolAdmin.id,
-        modulo_id: mod.id,
+        nombre: r.nombre,
+        descripcion: r.descripcion,
+        es_sistema: r.es_sistema,
+        activo: true,
+      },
+    });
+    rolesMap[r.nombre] = rol;
+  }
+
+  // 5. Permisos para MAQUINAS
+  const permisosMaquinas = [
+    { rolNombre: 'administrador', puede_editar: true },
+    { rolNombre: 'logistica', puede_editar: true },
+    { rolNombre: 'servicio_tecnico', puede_editar: false },
+    { rolNombre: 'taller', puede_editar: false },
+    { rolNombre: 'personal', puede_editar: false },
+  ];
+
+  for (const permiso of permisosMaquinas) {
+    await prisma.rolModulo.create({
+      data: {
+        rol_id: rolesMap[permiso.rolNombre].id,
+        modulo_id: modMaquinas.id,
+        puede_editar: permiso.puede_editar,
       },
     });
   }
 
-  // Taller -> Solo módulo 'maquinas' (limpiamos otros por si existían y asignamos maquinas)
-  await prisma.rolModulo.deleteMany({
-    where: { rol_id: rolTaller.id },
-  });
+  // 6. Asignar CONFIGURACION y VENDEDORES a 'administrador' con puede_editar = true
   await prisma.rolModulo.create({
     data: {
-      rol_id: rolTaller.id,
-      modulo_id: modMaquinas.id,
+      rol_id: rolesMap['administrador'].id,
+      modulo_id: modConfiguracion.id,
+      puede_editar: true,
     },
   });
 
-  console.log('✅ Permisos rol_modulo asignados correctamente.');
+  await prisma.rolModulo.create({
+    data: {
+      rol_id: rolesMap['administrador'].id,
+      modulo_id: modVendedores.id,
+      puede_editar: true,
+    },
+  });
 
-  // 5. Crear Usuarios de prueba con contraseñas hasheadas con bcrypt
-  const saltRounds = 10;
-  const adminPasswordHash = await bcrypt.hash('Admin123!', saltRounds);
-  const tallerPasswordHash = await bcrypt.hash('Taller123!', saltRounds);
+  // 7. Usuarios del sistema
+  const hashedSuperAdminPassword = await bcrypt.hash(superAdminPassword, 10);
 
-  const userAdmin = await prisma.usuario.upsert({
+  await prisma.usuario.upsert({
+    where: { email: superAdminEmail.toLowerCase().trim() },
+    update: {
+      password: hashedSuperAdminPassword,
+      rol_id: rolesMap['superAdmin'].id,
+      activo: true,
+    },
+    create: {
+      nombre: 'Super',
+      apellido: 'Admin',
+      email: superAdminEmail.toLowerCase().trim(),
+      password: hashedSuperAdminPassword,
+      rol_id: rolesMap['superAdmin'].id,
+      activo: true,
+    },
+  });
+
+  const defaultTestPass = await bcrypt.hash('Test1234!', 10);
+
+  await prisma.usuario.upsert({
     where: { email: 'admin@smg.com' },
     update: {
-      nombre: 'Admin',
-      apellido: 'Sistema',
-      password: adminPasswordHash,
-      rol_id: rolAdmin.id,
+      rol_id: rolesMap['administrador'].id,
       activo: true,
+      password: defaultTestPass,
     },
     create: {
-      nombre: 'Admin',
-      apellido: 'Sistema',
+      nombre: 'Usuario',
+      apellido: 'Administrador',
       email: 'admin@smg.com',
-      password: adminPasswordHash,
-      telefono: '+5492990000001',
-      rol_id: rolAdmin.id,
+      password: defaultTestPass,
+      rol_id: rolesMap['administrador'].id,
       activo: true,
     },
   });
 
-  const userTaller = await prisma.usuario.upsert({
+  await prisma.usuario.upsert({
+    where: { email: 'logistica@smg.com' },
+    update: {
+      rol_id: rolesMap['logistica'].id,
+      activo: true,
+      password: defaultTestPass,
+    },
+    create: {
+      nombre: 'Usuario',
+      apellido: 'Logística',
+      email: 'logistica@smg.com',
+      password: defaultTestPass,
+      rol_id: rolesMap['logistica'].id,
+      activo: true,
+    },
+  });
+
+  await prisma.usuario.upsert({
     where: { email: 'taller@smg.com' },
     update: {
-      nombre: 'Operador',
-      apellido: 'Taller',
-      password: tallerPasswordHash,
-      rol_id: rolTaller.id,
+      rol_id: rolesMap['taller'].id,
       activo: true,
+      password: defaultTestPass,
     },
     create: {
-      nombre: 'Operador',
+      nombre: 'Usuario',
       apellido: 'Taller',
       email: 'taller@smg.com',
-      password: tallerPasswordHash,
-      telefono: '+5492990000002',
-      rol_id: rolTaller.id,
+      password: defaultTestPass,
+      rol_id: rolesMap['taller'].id,
       activo: true,
     },
   });
 
-  console.log('✅ Usuarios creados:', [userAdmin.email, userTaller.email]);
-
-  const catMinicargadora = await prisma.categoria.upsert({
-    where: { nombre: 'minicargadora' },
-    update: {},
-    create: {
-      nombre: 'minicargadora',
-      descripcion: 'descripcion de la minicargadora'
-    },
-  });
-
-  const catBalde = await prisma.categoria.upsert({
-    where: { nombre: 'balde' },
-    update: {},
-    create: {
-      nombre: 'balde',
-      descripcion: 'descripcion del balde'
-    },
-  });
-
-  await prisma.equipo.upsert({
-    where: { codigo_interno: '30' },
-    update: {},
-    create: {
-      codigo_interno: '30',
-      marca: 'bobcat',
-      estado: 'disponible',
-      ubicacion: 'base',
-      descripcion: 'asd',
-      activo: true,
-      id_categoria: catMinicargadora.id,
-      maquina: {
-        create: {
-          modelo: 'S530',
-          anio: 2017,
-          n_serie: 'B42811183',
-          horas_motor_actual: 4230,
-        },
-      },
-    },
-  });
-
-  await prisma.equipo.upsert({
-    where: { codigo_interno: 'B30' },
-    update: {},
-    create: {
-      codigo_interno: 'B30',
-      marca: null,
-      estado: 'disponible',
-      ubicacion: 'base',
-      descripcion: 'asd',
-      activo: true,
-      id_categoria: catBalde.id,
-      aditamento: {
-        create: {
-        },
-      },
-    },
-  });
-
-  console.log('¡Datos inyectados correctamente! ✅');
+  console.log('✅ Seed ejecutado correctamente.');
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Error en el seed:', e);
     process.exit(1);
   })
   .finally(async () => {

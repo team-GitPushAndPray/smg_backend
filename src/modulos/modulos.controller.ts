@@ -1,8 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { ModulosService } from './modulos.service.js';
-import { RequiereModulo } from '../auth/decorators/requiere-modulo.decorator.js';
+import { Modulo } from '../auth/decorators/modulo.decorator.js';
 
-@RequiereModulo('configuracion')
+@Modulo('CONFIGURACION')
 @Controller('modulos')
 export class ModulosController {
   constructor(private readonly modulosService: ModulosService) {}

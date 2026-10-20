@@ -32,11 +32,12 @@ model Modulo {
 }
 
 model RolModulo {
-  rol_id    Int
-  modulo_id Int
+  rol_id       Int
+  modulo_id    Int
+  puede_editar Boolean @default(false)
 
-  rol       Rol    @relation(fields: [rol_id], references: [id], onDelete: Cascade)
-  modulo    Modulo @relation(fields: [modulo_id], references: [id], onDelete: Cascade)
+  rol    Rol    @relation(fields: [rol_id], references: [id], onDelete: Cascade)
+  modulo Modulo @relation(fields: [modulo_id], references: [id], onDelete: Cascade)
 
   @@id([rol_id, modulo_id])
   @@map("rol_modulo")
@@ -94,7 +95,8 @@ model Maquina {
   modelo             String
   anio               Int
   n_serie            String
-  horas_motor_actual Int  
+  horas_motor_actual Int
+  horas_actualizadas_en DateTime? @db.Timestamp()  
   
   equipo             Equipo @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
 

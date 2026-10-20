@@ -26,3 +26,14 @@ Este repositorio utiliza una estrategia de ramas estructurada para separar el de
 
 ## 🌍 Entornos
 - **Staging (API de Pruebas):** `URL_PENDIENTE`
+
+
+## 📂 Estructura del Proyecto
+
+El proyecto sigue los principios de **Clean Architecture** y **SOLID**, separando responsabilidades por dominios lógicos (módulos).
+
+### `src/prisma/` - Capa de Persistencia
+Centraliza la conexión a la base de datos utilizando **Prisma ORM**, garantizando una única instancia de conexión (patrón Singleton) para toda la aplicación y evitando fugas de memoria.
+- **`prisma.service.ts`**: Extiende de `PrismaClient` y maneja el ciclo de vida de la conexión a la BD.
+- **`prisma.module.ts`**: Empaqueta y exporta el servicio. 
+> **Nota de arquitectura:** Los controladores (`Controllers`) nunca interactúan directamente con Prisma. La base de datos solo es accedida a través de los Servicios (`Services`), respetando el principio de Responsabilidad Única.

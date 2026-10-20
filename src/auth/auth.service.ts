@@ -88,4 +88,53 @@ export class AuthService {
       data: { password: nuevoHash },
     });
   }
+
+
+  async getMe(userId: number) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      include: {
+        rol: {
+          include: {
+            modulos: {
+              include: {
+                modulo: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!usuario) throw new UnauthorizedException('Usuario no encontrado');
+
+    const esSuperAdmin = usuario.rol.nombre.toLowerCase() === 'superadmin';
+
+    let modulos: { codigo: string, puedeEditar: boolean}[] = [];
+
+    if (esSuperAdmin) {
+      const todosLosMoudulos = await this.prisma.modulo.findMany({
+        orderBy: { codigo: 'asc' },
+      });
+
+      modulos = todosLosMoudulos.map((m) => ({
+        codigo: m.codigo.toUpperCase(),
+        puedeEditar: true,
+      }));
+    } else {
+      modulos = (usuario.rol.modulos ?? []).map((rm) => ({
+        codigo: rm.modulo.codigo.toUpperCase(),
+        puedeEditar: Boolean(rm.puede_editar),
+      }));
+    }
+
+    return {
+      id: usuario.id,
+      nombre: usuario.nombre,
+      email: usuario.email,
+      rol: usuario.rol.nombre,
+      modulos,
+    };
+  }
+
 }

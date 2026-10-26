@@ -209,6 +209,97 @@ async function main() {
     },
   });
 
+  // =====================================================================
+  // 8. Seed de Equipos para pruebas
+  // =====================================================================
+  console.log('🌱 Poblando categorías y equipos de prueba...');
+
+  // 8.1 Crear Categorías
+  const catExcavadoras = await prisma.categoria.upsert({
+    where: { nombre: 'Excavadoras' },
+    update: {},
+    create: { nombre: 'Excavadoras', descripcion: 'Máquinas para excavación pesada' },
+  });
+
+  const catPalas = await prisma.categoria.upsert({
+    where: { nombre: 'Palas Cargadoras' },
+    update: {},
+    create: { nombre: 'Palas Cargadoras', descripcion: 'Equipos frontales' },
+  });
+
+  const catMartillos = await prisma.categoria.upsert({
+    where: { nombre: 'Martillos Hidráulicos' },
+    update: {},
+    create: { nombre: 'Martillos Hidráulicos', descripcion: 'Aditamentos de demolición' },
+  });
+
+  // 8.2 Crear Equipos de tipo MÁQUINA
+  // Máquina 1 (Para probar flujo feliz)
+  await prisma.equipo.upsert({
+    where: { codigo_interno: 'EXC-001' },
+    update: { activo: true, estado: 'disponible' },
+    create: {
+      codigo_interno: 'EXC-001',
+      marca: 'Caterpillar',
+      ubicacion: 'Base Neuquén',
+      descripcion: 'Excavadora lista para uso',
+      estado: 'disponible',
+      activo: true,
+      id_categoria: catExcavadoras.id,
+      maquina: {
+        create: {
+          modelo: '320D',
+          anio: 2018,
+          n_serie: 'CAT320D123456',
+          horas_motor_actual: 1500, // <--- Úsala para probar PATCH /horas
+          horas_actualizadas_en: new Date(),
+        },
+      },
+    },
+  });
+
+  // Máquina 2 (Para probar que al dar de baja ya no se puede operar)
+  await prisma.equipo.upsert({
+    where: { codigo_interno: 'EXC-002' },
+    update: { activo: true, estado: 'en_taller' },
+    create: {
+      codigo_interno: 'EXC-002',
+      marca: 'Komatsu',
+      ubicacion: 'Taller Central',
+      descripcion: 'Para probar bloqueos por baja',
+      estado: 'en_taller',
+      activo: true,
+      id_categoria: catExcavadoras.id,
+      maquina: {
+        create: {
+          modelo: 'PC200',
+          anio: 2015,
+          n_serie: 'KOMPC200789',
+          horas_motor_actual: 5000,
+          horas_actualizadas_en: new Date(),
+        },
+      },
+    },
+  });
+
+  // 8.3 Crear Equipo de tipo ADITAMENTO (Para probar el error 400 de horas)
+  await prisma.equipo.upsert({
+    where: { codigo_interno: 'MRT-001' },
+    update: { activo: true, estado: 'disponible' },
+    create: {
+      codigo_interno: 'MRT-001',
+      marca: 'Atlas Copco',
+      ubicacion: 'Depósito A',
+      descripcion: 'Martillo para retroexcavadora',
+      estado: 'disponible',
+      activo: true,
+      id_categoria: catMartillos.id,
+      aditamento: {
+        create: {},
+      },
+    },
+  });
+
   console.log('✅ Seed ejecutado correctamente.');
 }
 

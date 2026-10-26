@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { FiltrosEquiposDto } from './dto/filtro-equipos.dto.js';
+import { EstadoEquipo, FiltrosEquiposDto } from './dto/filtro-equipos.dto.js';
 import { EquipoListItemEntity, EquipoDetalleEntity, EquipoConRelacionesPrisma } from './entities/equipo.entity.js';
 import { CreateEquipoDto, UpdateEquipoDto } from './dto/index.js';
 
@@ -290,6 +290,86 @@ export class EquiposService {
     }); 
 
     return new EquipoDetalleEntity( equipoActualizado as unknown as EquipoConRelacionesPrisma);
+  }
+
+
+  // Actualiza el horómetro del equipo. SOlo aplicable a máquinas
+  async actualizarHoras (id: number, nuevasHoras: number): Promise<EquipoDetalleEntity> {
+
+    const equipo = await this.obtenerEquipoActivoOrThrow(id);
+
+    const esMaquina = Boolean(equipo.maquina);
+
+    if (!esMaquina) throw new BadRequestException('No se pueden registrar horas de motor en un aditamento');
+
+    const horasActuales = equipo.maquina?.horas_motor_actual ?? 0;
+
+    if (nuevasHoras < horasActuales) throw new BadRequestException(`Las horas no pueden ser menores a las actuales (${horasActuales})`);
+
+    await this.prisma.equipo.update({
+      where: { id },
+      data: {
+        maquina: {
+          update: {
+            horas_motor_actual: nuevasHoras,
+            horas_actualizadas_en: new Date(),
+          },
+        },
+      },
+    });
+
+    return this.findOnePrivado(id);
+  }
+
+  /**
+   * Cambia el estado del equipo. Validado por DTO en el controlador
+   */
+  async cambiarEstado(id: number, nuevoEstado: EstadoEquipo): Promise<EquipoDetalleEntity> {
+    const equipo = await this.obtenerEquipoActivoOrThrow(id);
+
+    this.validarTransicionEstado(equipo.estado, nuevoEstado);
+
+    await this.prisma.equipo.update({
+      where: { id },
+      data: { estado: nuevoEstado as any},
+    });
+
+    return this.findOnePrivado(id);
+  }
+
+  /**
+   * Baja lógica del equipo, impidiendo futuras modificaciones
+   */
+  async darDeBaja(id: number): Promise<void> {
+    await this.obtenerEquipoActivoOrThrow(id);
+    
+    await this.prisma.equipo.update({
+      where: { id },
+      data: { activo: false },
+    });
+  }
+
+
+  /**
+   * Centraliza la invariante de que un equipo debe existir y estar activo para recibir cualquier operación que no sea de mera lectura
+   */
+  private async obtenerEquipoActivoOrThrow(id: number) {
+    const equipo = await this.prisma.equipo.findUnique({
+      where: { id },
+      include: this.defaultInclude,
+    });
+
+    if (!equipo) throw new NotFoundException(`El equipo con ID ${id} no fue encontrado`);
+    
+    if (!equipo.activo) throw new ConflictException(`El equipo con ID ${id} está dado de baja y no admite modificaciones`);
+
+    return equipo;
+  }
+
+  private validarTransicionEstado(estadoActual: string, nuevoEstado: string): void {
+    // TODO: Implementar reglas de transición cuando existan los módulos de Alquiler y Taller.
+    // Por ahora se permiten todas las transiciones.
+    return;
   }
 
 }

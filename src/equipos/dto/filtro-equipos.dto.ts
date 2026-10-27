@@ -40,12 +40,13 @@ export class FiltrosEquiposDto extends PaginationDto {
   categoriaId?: number;
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
+  @Transform(({ obj, key }) => {
+    const rawValue = obj[key];
+    if (rawValue === 'true' || rawValue === true) return true;
+    if (rawValue === 'false' || rawValue === false) return false;
+    return undefined;
   })
   @IsBoolean({ message: 'activo debe ser un valor booleano (true o false)' })
-  activo?: boolean = true;
+  activo?: boolean;
 
 }

@@ -1,6 +1,6 @@
 import { Equipo, Categoria, Maquina, Aditamento } from '@prisma/client';
 
-export class CatalogoEquipoEntity implements Equipo {
+export class CatalogoEquipoEntity implements Omit<Equipo, 'qr_token'> {
     id: number;
     codigo_interno: string;
     marca: string | null;
@@ -13,5 +13,5 @@ export class CatalogoEquipoEntity implements Equipo {
     categoria?: Categoria;
     maquina?: Maquina | null;
     aditamento?: Aditamento | null;
-
+    
 }

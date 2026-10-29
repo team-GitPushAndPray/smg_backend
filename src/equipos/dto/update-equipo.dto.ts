@@ -4,6 +4,7 @@ import { Transform } from 'class-transformer';
 const MAX_ANIO_PERMITIDO = new Date().getFullYear() + 1;
 
 export class UpdateEquipoDto {
+
   @IsOptional()
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
@@ -11,6 +12,10 @@ export class UpdateEquipoDto {
   @IsString({ message: 'codigoInterno debe ser un texto' })
   @IsNotEmpty({ message: 'codigoInterno no puede estar vacío' })
   codigoInterno?: string;
+
+  @IsOptional()
+  @Transform(() => undefined)
+  qr_token?: never;
 
   @IsOptional()
   @IsInt({ message: 'categoriaId debe ser un número entero' })

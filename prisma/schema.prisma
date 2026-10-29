@@ -87,6 +87,7 @@ model Equipo {
 
   maquina        Maquina?
   aditamento     Aditamento?
+  checklist       Checklist[]
 
   @@map("equipos")
 }
@@ -130,4 +131,91 @@ model Vendedor {
   updatedAt   DateTime      @default(now()) @updatedAt 
 
   @@map("vendedores")
+}
+
+
+enum TipoPlantilla {
+  DIARIO
+  MANTENIMIENTO
+  ALQUILERES
+}
+
+enum TipoChecklist {
+  DIARIO
+  MANTENIMIENTO
+  ENTREGA
+  DEVOLUCION
+}
+
+enum EstadoItem {
+  NORMAL
+  ANORMAL
+  NO_APLICA
+}
+
+
+model PlantillaChecklist {
+  id     Int             @id @default(autoincrement())
+  tipo   TipoPlantilla   @unique
+  nombre String
+
+  items  PlantillaItem[]
+
+  @@map("plantilla_checklist")
+}
+
+
+model PlantillaItem {
+  id           Int                  @id @default(autoincrement())
+  plantilla_id Int
+  nombre       String
+  orden        Int
+
+  plantilla    PlantillaChecklist   @relation(fields: [plantilla_id], references: [id], onDelete: Restrict)
+  respuestas   ChecklistRespuesta[]
+
+  @@unique([plantilla_id, orden])
+  @@map("plantilla_item")
+}
+
+
+model Checklist {
+  id            Int                  @id @default(autoincrement())
+  tipo          TipoChecklist
+  fecha         DateTime             @default(now())
+  equipo_id     Int
+  usuario_id    Int?                 
+  horas_motor   Int?                 
+  observaciones String?              @db.Text
+
+  equipo        Equipo               @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
+  respuestas    ChecklistRespuesta[]
+  fotos         ChecklistFoto[]      
+
+  @@map("checklist")
+}
+
+model ChecklistRespuesta {
+  id                Int           @id @default(autoincrement())
+  checklist_id      Int
+  plantilla_item_id Int
+  estado            EstadoItem
+  observacion       String?       @db.Text
+
+  checklist         Checklist     @relation(fields: [checklist_id], references: [id], onDelete: Restrict)
+  plantilla_item    PlantillaItem @relation(fields: [plantilla_item_id], references: [id], onDelete: Restrict)
+
+  @@unique([checklist_id, plantilla_item_id])
+  @@map("checklist_respuesta")
+}
+
+
+model ChecklistFoto {
+  id           Int       @id @default(autoincrement())
+  checklist_id Int
+  url          String
+
+  checklist    Checklist @relation(fields: [checklist_id], references: [id], onDelete: Restrict)
+
+  @@map("checklist_foto")
 }

@@ -75,6 +75,7 @@ model Categoria {
 model Equipo {
   id             Int         @id @default(autoincrement())
   codigo_interno String      @unique
+  qr_token       String      @unique @default(uuid()) @db.Uuid
   marca          String?
   estado         String
   ubicacion      String?

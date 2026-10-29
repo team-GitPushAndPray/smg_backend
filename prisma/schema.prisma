@@ -170,6 +170,7 @@ model PlantillaItem {
   plantilla_id Int
   nombre       String
   orden        Int
+  activo       Boolean              @default(true)
 
   plantilla    PlantillaChecklist   @relation(fields: [plantilla_id], references: [id], onDelete: Restrict)
   respuestas   ChecklistRespuesta[]

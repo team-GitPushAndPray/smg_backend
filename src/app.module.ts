@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createObserveModule } from '@nestjs/observe';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { CatalogoModule } from './catalogo/catalogo.module.js';
 import { AppController } from './app.controller.js';
@@ -13,6 +14,7 @@ import { ModulosGuard } from './auth/guards/modulos.guard.js';
 import { ModulosModule } from './modulos/modulos.module.js';
 import { RolesModule } from './roles/roles.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
+import { ChecklistsModule } from './checklists/checklists.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -25,7 +27,14 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule, 
     ModulosModule, 
     RolesModule, 
-    UsuariosModule
+    UsuariosModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 6000,
+        limit: 30,
+      }
+    ]),
+    ChecklistsModule,
   ],
   controllers: [AppController],
   providers: [PrismaService,

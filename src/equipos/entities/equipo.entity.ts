@@ -4,6 +4,7 @@ export interface EquipoConRelacionesPrisma {
 
     id: number;
     codigo_interno: string;
+    qr_token: string;
     marca: string;
     estado: string;
     descripcion?: string | null;
@@ -65,6 +66,7 @@ export class EquipoListItemEntity {
 
 export class EquipoDetalleEntity extends EquipoListItemEntity {
 
+    qr_token: string;
     descripcion: string | null;
     ubicacion: string | null;
     activo: boolean;
@@ -74,6 +76,7 @@ export class EquipoDetalleEntity extends EquipoListItemEntity {
     constructor(equipo: EquipoConRelacionesPrisma) {
         super(equipo);
 
+        this.qr_token = equipo.qr_token;
         this.descripcion = equipo.descripcion ?? null;
         this.ubicacion = equipo.ubicacion ?? null;
         this.activo = equipo.activo;

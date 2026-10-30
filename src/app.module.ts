@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createObserveModule } from '@nestjs/observe';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { CatalogoModule } from './catalogo/catalogo.module.js';
 import { AppController } from './app.controller.js';
@@ -32,12 +31,6 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ModulosModule, 
     RolesModule, 
     UsuariosModule,
-    ThrottlerModule.forRoot([
-      {
-        ttl: 6000,
-        limit: 30,
-      }
-    ]),
     ChecklistsModule,
   ],
   controllers: [AppController],

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import 'multer';
 import { EstadoItem, TipoChecklist, TipoPlantilla } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { HorometroHelper } from '../common/helpers/horometro.helper.js';
@@ -7,11 +8,15 @@ import { MAPA_OPCIONES_CHECKLIST, TIPOS_HABILITADOS_ADITAMENTO, TIPOS_HABILITADO
 import { ChecklistRespuestaItemDto, CrearChecklistDto } from './dto/create-checklist.dto.js';
 import { ChecklistResumenResponse, CreatedChecklistResponseEntity } from './entities/created-checklist-response.entity.js';
 import { PublicChecklistItemResponse, PublicChecklistOpcionResponse, PublicChecklistResponseEntity } from './entities/public-checklist-response.entity.js';
+import { ImagesService } from '../images/images.service.js';
 
 @Injectable()
 export class ChecklistsService {
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly imagesService: ImagesService,
+  ) { }
 
 
   async obtenerFormularioPorQrToken(
@@ -21,7 +26,6 @@ export class ChecklistsService {
       throw new NotFoundException('Equipo no encontrado');
     }
 
-    // Buscamos equipo por qr_token incluyendo únicamente los datos necesarios
     const equipo = await this.prisma.equipo.findUnique({
       where: { qr_token: qrToken },
       select: {
@@ -29,9 +33,7 @@ export class ChecklistsService {
         marca: true,
         activo: true,
         categoria: {
-          select: {
-            nombre: true,
-          },
+          select: { nombre: true },
         },
         maquina: {
           select: {
@@ -40,13 +42,11 @@ export class ChecklistsService {
           },
         },
       },
-
     });
 
     if (!equipo || !equipo.activo) throw new NotFoundException('Equipo no encontrado');
 
     const esMaquina = equipo.maquina !== null;
-
     const tiposChecklistHabilitados = esMaquina ? TIPOS_HABILITADOS_MAQUINA : TIPOS_HABILITADOS_ADITAMENTO;
 
     const tiposPlantillaRequeridos = Array.from(
@@ -74,7 +74,6 @@ export class ChecklistsService {
       },
     });
 
-    // Mapa en memoria 0(1) de TipoPlantilla -> items[]
     const itemsPorPlantilla = new Map<TipoPlantilla, PublicChecklistItemResponse[]>(
       plantillasDB.map((plantilla) => [plantilla.tipo, plantilla.items]),
     )
@@ -82,7 +81,6 @@ export class ChecklistsService {
     const opciones: PublicChecklistOpcionResponse[] =
       tiposChecklistHabilitados.map((tipoChecklist) => {
         const config = MAPA_OPCIONES_CHECKLIST[tipoChecklist];
-
         return {
           tipo: config.tipo,
           titulo: config.titulo,
@@ -90,7 +88,6 @@ export class ChecklistsService {
         };
       });
 
-    // Retornar entidad limpia sin equipo.id ni plantilla_id
     return new PublicChecklistResponseEntity({
       equipo: {
         codigo_interno: equipo.codigo_interno,
@@ -102,45 +99,46 @@ export class ChecklistsService {
       },
       opciones,
     });
-
   }
 
 
   // POST PÚBLICO DE CHECKLIST CON ACTUALIZACIÓN DE HORAS
 
-  async crearCheckListPorQrToken(
+  async crearChecklistPorQrToken(
     qrToken: string,
     dto: CrearChecklistDto,
+    fotos: Express.Multer.File[],
   ): Promise<CreatedChecklistResponseEntity> {
-
     if (!isUUID(qrToken)) throw new NotFoundException('Equipo no encontrado');
 
+    // Buscar equipo activo y su relación con máquina
     const equipo = await this.prisma.equipo.findUnique({
       where: { qr_token: qrToken },
-      select: {
-        id: true,
-        codigo_interno: true,
-        activo: true,
-        maquina: {
-          select: {
-            horas_motor_actual: true,
-          },
-        },
-      },
+      include: { maquina: true },
     });
 
     if (!equipo || !equipo.activo) throw new NotFoundException('Equipo no encontrado');
 
     const esMaquina = equipo.maquina !== null;
 
-    // Validar que el tipo esté permitido para este equipo (DIARIO en aditamento -> 400)
+    // Validar tipos de checklist permitidos (Usando el método privado)
     this.validarTipoChecklistPermitido(dto.tipo, esMaquina);
 
-    // Resolver plantilla en base al tipo (ENTREGA/DEVOLUCION -> ALQUILERES)
-    const configOpcion = MAPA_OPCIONES_CHECKLIST[dto.tipo];
+    // Validar horómetro ANTES de subir fotos a Cloudinary
+    const horasAnteriores = esMaquina ? equipo.maquina!.horas_motor_actual : null;
+    const horasMotorGuardar = esMaquina
+      ? HorometroHelper.validarNuevasHoras(dto.horas_motor, horasAnteriores!)
+      : null;
+
+    // Obtener la plantilla correspondiente y validar ítems
+    const tipoPlantilla =
+      dto.tipo === TipoChecklist.ENTREGA || dto.tipo === TipoChecklist.DEVOLUCION
+        ? TipoPlantilla.ALQUILERES
+        : (dto.tipo as unknown as TipoPlantilla);
+
     const plantilla = await this.prisma.plantillaChecklist.findUnique({
-      where: { tipo: configOpcion.tipoPlantilla },
-      select: {
+      where: { tipo: tipoPlantilla },
+      include: {
         items: {
           where: { activo: true },
           select: { id: true },
@@ -148,80 +146,98 @@ export class ChecklistsService {
       },
     });
 
-    if (!plantilla) throw new BadRequestException(`No se encontró la plantilla configurada para el tipo ${dto.tipo}`);
+    if (!plantilla) {
+      throw new BadRequestException(`No existe una plantilla para el tipo ${dto.tipo}`);
+    }
 
-    // Validar respuestas: exactamente los ítems activos (ni faltan, ni sobran, ni se repiten)
-    const idsActivosPlantilla = plantilla.items.map((item) => item.id);
-    this.validarIntegridadRespuestas(dto.respuestas, idsActivosPlantilla);
+    this.validarIntegridadRespuestas(
+      dto.respuestas,
+      plantilla.items.map((i) => i.id),
+    );
 
+    // SUBIR FOTOS A CLOUDINARY
+    const urlsFotos = await this.imagesService.subirMultiples(
+      fotos,
+      'checklists',
+    );
 
-    // Validar y procesar horas_motor (Máquina: obligatoria y >= actual | Aditamento: null)
-    const horasAnteriores: number | null = esMaquina
-      ? (equipo.maquina?.horas_motor_actual ?? 0)
-      : null;
+    // TRANSACCIÓN ATÓMICA EN BASE DE DATOS
+    const checklistCreado = await this.prisma.$transaction(async (tx) => {
+      if (esMaquina && horasMotorGuardar !== null) {
+        const resultadoUpdate = await tx.maquina.updateMany({
+          where: {
+            equipo_id: equipo.id,
+            horas_motor_actual: { lte: horasMotorGuardar },
+          },
+          data: {
+            horas_motor_actual: horasMotorGuardar,
+            horas_actualizadas_en: new Date(),
+          },
+        });
 
-    const horasMotorGuardar: number | null = esMaquina
-      ? HorometroHelper.validarNuevasHoras(dto.horas_motor, horasAnteriores!)
-      : null;
+        if (resultadoUpdate.count === 0) {
+          throw new BadRequestException(
+            'Las horas del equipo fueron actualizadas recientemente por otro operario con un valor mayor',
+          );
+        }
+      }
 
-    // TRANSACCIÓN ATÓMICA
-    const checklistCreado = await this.prisma.$transaction( async (tx) => {
+      const observacionesLimpias = dto.observaciones?.trim() || null;
 
-      const nuevoChecklist = await tx.checklist.create({
+      return tx.checklist.create({
         data: {
           equipo_id: equipo.id,
           tipo: dto.tipo,
           horas_motor: horasMotorGuardar,
-          responsable_nombre: dto.responsable_nombre,
-          responsable_apellido: dto.responsable_apellido,
-          observaciones: dto.observaciones ?? null,
+          responsable_nombre: dto.responsable_nombre.trim(),
+          responsable_apellido: dto.responsable_apellido.trim(),
+          observaciones: observacionesLimpias,
+          respuestas: {
+            create: dto.respuestas.map((r) => ({
+              plantilla_item_id: r.plantilla_item_id,
+              estado: r.estado,
+            })),
+          },
+          fotos: {
+            create: urlsFotos.map((url) => ({ url })),
+          },
+        },
+        include: {
+          fotos: {
+            select: { url: true },
+          },
         },
       });
-
-      await tx.checklistRespuesta.createMany({
-        data: dto.respuestas.map((r) => ({
-          checklist_id: nuevoChecklist.id,
-          plantilla_item_id: r.plantilla_item_id,
-          estado: r.estado,
-        })),
-      });
-
-      if (esMaquina && horasMotorGuardar !== null) {
-        await HorometroHelper.actualizarHorasConcurrenciaSegura(
-          tx,
-          equipo.id,
-          horasMotorGuardar,
-        );
-      }
-
-      return nuevoChecklist
     });
 
-    return new CreatedChecklistResponseEntity({
+    // Calcular resumen 
+    const resumen = this.calcularResumenRespuestas(dto.respuestas);
+
+    return {
       id: checklistCreado.id,
       tipo: checklistCreado.tipo,
       fecha: checklistCreado.fecha,
       equipo: equipo.codigo_interno,
       horas_anteriores: horasAnteriores,
       horas_motor: horasMotorGuardar,
-      resumen: this.calcularResumenRespuestas(dto.respuestas),
-      fotos: [],
-    });
-
+      resumen,
+      fotos: checklistCreado.fotos.map((f) => f.url),
+    };
   }
 
 
-  // MÉTODOS PRIVADOS AUXILIARES
+  //        MÉTODOS PRIVADOS AUXILIARES
+  
   private validarTipoChecklistPermitido(
     tipo: TipoChecklist,
     esMaquina: boolean,
-  ) : void {
+  ): void {
     const tiposPermitidos = esMaquina ? TIPOS_HABILITADOS_MAQUINA : TIPOS_HABILITADOS_ADITAMENTO;
 
     if (!tiposPermitidos.includes(tipo)) {
       throw new BadRequestException(
         esMaquina ? `El tipo de checklist ${tipo} no es válido para una máquina` :
-        `Un aditamento solo admite checklists de tipo ENTREGA o DEVOLUCION`,
+          `Un aditamento solo admite checklists de tipo ENTREGA o DEVOLUCION`,
       );
     }
   }
@@ -229,27 +245,31 @@ export class ChecklistsService {
   private validarIntegridadRespuestas(
     respuestasEnviadas: ChecklistRespuestaItemDto[],
     idsActivosPlantilla: number[],
-  ) : void {
+  ): void {
     const idsEnviados = respuestasEnviadas.map((r) => r.plantilla_item_id);
     const setIdsEnviados = new Set(idsEnviados);
 
-    if (setIdsEnviados.size !== idsEnviados.length) throw new BadRequestException('Las respuestas contienen ítems repetidos');
+    if (setIdsEnviados.size !== idsEnviados.length) {
+      throw new BadRequestException('Las respuestas contienen ítems repetidos');
+    }
 
     const setIdsPlantilla = new Set(idsActivosPlantilla);
-
     const sobrantes = idsEnviados.filter((id) => !setIdsPlantilla.has(id));
 
-    if (sobrantes.length > 0) throw new BadRequestException(`Los siguientes ítems no pertenecen a la plantilla activa: ${sobrantes.join(', ')}`);
-    
+    if (sobrantes.length > 0) {
+      throw new BadRequestException(`Los siguientes ítems no pertenecen a la plantilla activa: ${sobrantes.join(', ')}`);
+    }
+
     const faltantes = idsActivosPlantilla.filter((id) => !setIdsEnviados.has(id));
 
-    if (faltantes.length > 0) throw new BadRequestException(`Faltan responder ${faltantes.length} item(s) obligatorio(s) de la plantilla`);
-
+    if (faltantes.length > 0) {
+      throw new BadRequestException(`Faltan responder ${faltantes.length} item(s) obligatorio(s) de la plantilla`);
+    }
   }
 
   private calcularResumenRespuestas(
     respuestas: ChecklistRespuestaItemDto[]
-  ) : ChecklistResumenResponse {
+  ): ChecklistResumenResponse {
     const resumen: ChecklistResumenResponse = {
       normales: 0,
       anormales: 0,
@@ -263,7 +283,5 @@ export class ChecklistsService {
     }
 
     return resumen;
-
   }
-
 }

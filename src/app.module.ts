@@ -15,11 +15,15 @@ import { ModulosModule } from './modulos/modulos.module.js';
 import { RolesModule } from './roles/roles.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
 import { ChecklistsModule } from './checklists/checklists.module.js';
+import { ConfigModule } from '@nestjs/config';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     PrismaModule,
     CatalogoModule, 
     VendedoresModule, 
@@ -45,7 +49,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     {
       provide: APP_GUARD,
       useClass: ModulosGuard,
-    }
+    },
   ],
   exports: [PrismaService]
 })

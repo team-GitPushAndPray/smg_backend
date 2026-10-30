@@ -43,10 +43,12 @@ Este repositorio utiliza una estrategia de ramas estructurada para separar el de
 Sigue estos pasos para levantar el entorno de desarrollo local. Es fundamental completarlos en orden para garantizar que la base de datos y la seguridad inicial se configuren correctamente.
 
 ### 1. Requisitos Previos
+
 - [Node.js](https://nodejs.org/) (v18 o superior)
 - Motor de base de datos **PostgreSQL** corriendo localmente (o en la nube).
 
 ### 2. Clonar el repositorio e instalar dependencias
+
 ```bash
 git clone https://github.com/team-GitPushAndPray/smg_backend
 cd smg_backend
@@ -54,17 +56,23 @@ npm install
 ```
 
 ### 3. Configurar Variables de Entorno
+
 Duplica el archivo de configuración de ejemplo y renómbralo a `.env`. Este paso es obligatorio, ya que contiene secretos que no se versionan en Git.
+
 ```bash
 cp .env.example .env
 ```
+
 Abre el archivo `.env` y asegúrate de configurar correctamente:
+
 - `DATABASE_URL`: La cadena de conexión a tu base de datos PostgreSQL.
 - `JWT_SECRET`: Una clave secreta segura para firmar los tokens.
 - `SUPERADMIN_EMAIL` y `SUPERADMIN_PASSWORD`: Credenciales para el usuario raíz.
 
 ### 4. Base de Datos (Prisma)
+
 Ejecuta las migraciones para crear las tablas en tu base de datos y sincronizar el esquema. Luego, corre el seed para poblar el sistema con los módulos requeridos, roles de seguridad y el superusuario inicial:
+
 ```bash
 # 1. Sincronizar esquema y generar el cliente de Prisma
 npx prisma migrate dev
@@ -74,10 +82,12 @@ npm run seed
 ```
 
 ### 5. Levantar el Servidor
+
 ```bash
 # Modo desarrollo (con hot-reload)
 npm run start:dev
 ```
+
 El servidor estará corriendo en `http://localhost:3000`. Ya puedes comenzar a realizar peticiones a la API.
 
 ---
@@ -141,12 +151,50 @@ Maneja la exposición del inventario hacia el exterior (ej. la web pública de c
 - **`entities/` (Serialización de Salida)**
   - `catalogo-equipo.entity.ts`: Define la estructura del JSON que se envía al exterior. Es una capa de seguridad vital: asegura que datos administrativos, métricas internas o historiales no se filtren accidentalmente a la web pública, devolviendo un objeto "limpio" solo con información comercial.
 
-- ### `src/common/` Capa de Utilidades Compartidas (Cross-Cutting Concerns)
+### `src/checklists/` Capa de Gestión e Inspección Técnica de Equipos (Checklists)
+
+Módulo de negocio central que administra el ciclo de vida de los checklists operativos y preventivos de la flota. Gestiona tanto la consulta pública de plantillas dinámicas mediante código QR como la recepción, validación estricta y persistencia atómica de inspecciones en campo con evidencia fotográfica.
+
+- **`config/` (Configuración de Reglas de Negocio)**
+  - `checklist-opciones.config.ts`: Centraliza la matriz de compatibilidad de inspecciones según el tipo de equipo (`TIPOS_HABILITADOS_MAQUINA` y `TIPOS_HABILITADOS_ADITAMENTO`), vinculando en memoria cada tipo de checklist (`DIARIO`, `SEMANAL`, `ENTREGA`, `DEVOLUCION`) con su respectiva plantilla base (`TipoPlantilla`). Desacopla las reglas de asignación del servicio, facilitando su escalabilidad y mantenimiento sin modificar código procedural.
+
+- **`dto/` (Contratos de Transferencia y Validación de Datos)**
+  - `create-checklist.dto.ts`: Define las clases `CrearChecklistDto` y `ChecklistRespuestaItemDto`. Implementa decoradores de `class-validator` y `class-transformer` para validar en profundidad los datos de inspección: obligatoriedad del responsable, horas de motor, observaciones opcionales y la estructura del array de respuestas (`plantilla_item_id` y `estado` con el enum `EstadoItem`).
+  - `update-checklist.dto.ts`: Extiende de `PartialType(CrearChecklistDto)` para permitir modificaciones parciales en etapas posteriores de auditoría o revisión administrativa sin duplicar esquemas de validación.
+
+- **`entities/` (Serialización y Contratos de Respuesta)**
+  - `public-checklist-response.entity.ts`: Modela la respuesta pública devuelta al escanear un QR (`GET /api/public/checklists/:qrToken`). Sanitiza la salida ocultando identificadores autoincrementales y datos internos sensibles de la base de datos, entregando al frontend un contrato limpio con el resumen del equipo (código, marca, categoría, estado y horas actuales) y las opciones de inspección con sus ítems activos ordenados.
+  - `created-checklist-response.entity.ts`: Modela la respuesta emitida tras un registro exitoso (`201 Created`). Incluye la confirmación de horas registradas, el array de URLs seguras de las fotos persistidas en Cloudinary y un objeto `resumen` que totaliza los ítems (`normales`, `anormales` y `no_aplica`) para visualización inmediata en interfaces móviles.
+
+- **`interceptors/` (Adaptación de Transporte Multipart)**
+  - `parse-checklist-datos.interceptor.ts`: Interceptor que solventa la limitación de Multer al recibir envíos mixtos (`multipart/form-data`). Extrae el campo de texto `datos` enviado en formato JSON serializado por el cliente, lo parsea a un objeto JavaScript nativo y lo inyecta en `request.body`. Esto permite que el `ValidationPipe` global de NestJS y los decoradores de `class-validator` actúen sobre el DTO tipado sin perder compatibilidad con el streaming de fotos.
+
+- **`public-checklists.controller.ts` (Controlador de Acceso Público)**
+  - Expone los endpoints de libre acceso para operarios en campo sin requerir autenticación JWT (decorados con `@Public()`), pero blindados contra abuso mediante `@Throttle()` (`ThrottlerGuard`). Conecta el interceptor de archivos (`FilesInterceptor('fotos')`), el interceptor de parseo (`ParseChecklistDatosInterceptor`) y el pipe de validación multimedia (`ParseImagesPipe`) en una canalización secuencial y declarativa.
+
+- **`checklists.service.ts` (Orquestación del Dominio y Transacciones)**
+  - Coordina el flujo completo de inspecciones:
+    1. Resuelve equipos por `qr_token` verificando su estado activo.
+    2. Valida la coherencia de negocio (aditamentos vs máquinas y reglas de horómetro mediante `HorometroHelper`).
+    3. Verifica la integridad matemática de las respuestas contra los ítems vigentes de la plantilla en base de datos (rechaza repetidos, sobrantes o faltantes).
+    4. Sube las fotos a Cloudinary en memoria mediante `ImagesService` solo cuando el payload es 100% válido.
+    5. Ejecuta una transacción atómica (`prisma.$transaction`) que actualiza concurrentemente las horas del equipo (con bloqueo optimista) y crea el checklist asociando sus respuestas y registros en `checklist_foto`.
+
+- **`checklists.module.ts` (Módulo del Dominio)**
+  - Integra y encapsula los controladores y servicios de checklists, importando `PrismaModule` para persistencia e `ImagesModule` para el soporte multimedia.
+
+### `src/common/` Capa de Utilidades Compartidas (Cross-Cutting Concerns)
 
 Alberga recursos, clases y validaciones globales que son transversales a toda la aplicación. Su propósito es centralizar elementos que se repiten en múltiples módulos, garantizando la consistencia y respetando el principio **DRY (Don't Repeat Yourself)**.
 
 - **`dto/` (Validadores Globales)**
   - `pagination.dto.ts`: Define y valida los parámetros de paginación universales (ej: `page` y `limit`) que se envían por Query Params. Al centralizar esto, se garantiza que todos los endpoints de listado (ya sean equipos, usuarios, o catálogo) paginen exactamente de la misma forma, unificando el contrato de la API para el equipo de Frontend.
+
+- **`helpers/` (Lógica de Dominio Reutilizable)**
+  - `horometro.helper.ts`: Centraliza las reglas de negocio e integridad para el registro de horómetros de motor. Valida que el valor sea obligatorio y no decreciente para máquinas, y nulo para aditamentos. Al desacoplar esta lógica, se reutiliza idénticamente tanto en la gestión de equipos (`EquiposService`) como en el registro de checklists en campo (`ChecklistsService`), evitando discrepancias operativas.
+
+- **`pipes/` (Validación y Procesamiento de Entrada)**
+  - `parse-images.pipe.ts`: Pipe parametrizable para la validación estricta de archivos multipart en memoria RAM antes de tocar cualquier servicio externo o base de datos. Controla rango de cantidad (1 a 4 fotos), formatos permitidos (`image/jpeg`, `image/png`, `image/webp`) y límite de peso individual (hasta 1.5 MB). Responde siempre con `400 Bad Request` legible en español y opera sin persistencia en disco, asegurando compatibilidad nativa con la infraestructura serverless de Vercel.
 
 - ### `src/equipos/` Capa de Dominio de Inventario
 
@@ -167,6 +215,16 @@ Es el módulo central (Core Domain) del backend. Gestiona todo el ciclo de vida 
 
 - **`entities/` (Representación de Salida)**
   - `equipo.entity.ts`: Mapea las respuestas de Prisma, aplanando las relaciones anidadas (ej: extrayendo las horas de la tabla `maquina` hacia el primer nivel del JSON) para entregarle al Frontend una estructura limpia, predecible y lista para renderizar.
+
+### `src/images/` Capa de Integración Multimedia y Almacenamiento Externo
+
+Módulo de infraestructura que centraliza la comunicación con servicios externos de almacenamiento en la nube (Cloudinary). Su diseño desacopla a los módulos de dominio de los detalles de implementación de terceros, respetando el principio de **Responsabilidad Única (SRP)** y permitiendo la reutilización del servicio tanto en el registro de checklists como en la futura gestión de fotos de equipos (**F-05**).
+
+- **`images.module.ts` (Encapsulamiento del Proveedor)**
+  - Configura y exporta `ImagesService`. Al encapsular las dependencias del SDK de Cloudinary y de `ConfigModule`, permite que cualquier módulo de negocio consuma el servicio de almacenamiento simplemente importando `ImagesModule`, sin exponer configuraciones de bajo nivel ni credenciales en capas superiores.
+
+- **`images.service.ts` (Servicio de Subida y Streaming en Memoria)**
+  - Implementa el método reutilizable `subir(archivo, carpeta)` y su variante por lotes `subirMultiples(archivos, carpeta)`. Convierte el `Buffer` de cada archivo en memoria RAM en un stream legible (`Readable.from()`) y lo transmite directamente a la API de Cloudinary (`upload_stream`). Este enfoque evita la escritura en el sistema de archivos local, garantizando compatibilidad total con la arquitectura serverless de Vercel (entorno sin disco persistente). Además, mapea cualquier caída o error de red del proveedor externo a un `502 Bad Gateway`, protegiendo la apertura de transacciones atómicas en la base de datos si las imágenes no llegaron a asegurarse.
 
 - ### `src/modulos/` Capa de Gestión de Módulos (Core RBAC)
 
@@ -234,10 +292,12 @@ Administra la información y el ciclo de vida de los representantes comerciales 
   - `update-vendedores.dto.ts`: Valida las modificaciones sobre vendedores existentes. Suele utilizar patrones de herencia (como `PartialType`) para permitir actualizaciones parciales seguras mediante peticiones PATCH.
 
 - ### `src/` (Archivos Raíz) - main y Orquestación
+
 Son los puntos de entrada que levantan y configuran el núcleo de la aplicación NestJS.
-  - **`main.ts`**: El archivo de arranque (main). Aquí se levanta el servidor HTTP, se configuran las políticas de seguridad (CORS) y se inyectan los "Pipes" globales (como el `ValidationPipe` que hace funcionar a todos los DTOs del sistema).
-  - **`app.module.ts`**: El módulo raíz de la aplicación. Actúa como el gran orquestador que importa y conecta todos los módulos de dominio (`EquiposModule`, `AuthModule`, etc.) y configura módulos globales (como el `ConfigModule` para las variables de entorno).
-  - **`app.controller.ts` y `app.service.ts`**: Generalmente utilizados como un "Health Check" (ej: `GET /` -> "API Online") para que los balanceadores de carga o servicios de hosting verifiquen que el servidor está vivo.
+
+- **`main.ts`**: El archivo de arranque (main). Aquí se levanta el servidor HTTP, se configuran las políticas de seguridad (CORS) y se inyectan los "Pipes" globales (como el `ValidationPipe` que hace funcionar a todos los DTOs del sistema).
+- **`app.module.ts`**: El módulo raíz de la aplicación. Actúa como el gran orquestador que importa y conecta todos los módulos de dominio (`EquiposModule`, `AuthModule`, etc.) y configura módulos globales (como el `ConfigModule` para las variables de entorno).
+- **`app.controller.ts` y `app.service.ts`**: Generalmente utilizados como un "Health Check" (ej: `GET /` -> "API Online") para que los balanceadores de carga o servicios de hosting verifiquen que el servidor está vivo.
 
 ---
 
@@ -245,10 +305,10 @@ Son los puntos de entrada que levantan y configuran el núcleo de la aplicación
 
 Fuera de la carpeta `src/`, el proyecto cuenta con archivos críticos para el ecosistema, el despliegue y las dependencias:
 
-- **`.env.example`**: Plantilla de seguridad que documenta todas las variables de entorno que el sistema necesita para funcionar (URL de la base de datos PostgreSQL, secretos de encriptación JWT, correos de superadmin, puertos). **Regla de oro:** Jamás se sube el archivo `.env` real al repositorio, cualquier desarrollador nuevo debe clonar este `.env.example`.
+- **`.env.example`**: Plantilla de seguridad que documenta todas las variables de entorno que el sistema necesita para funcionar (URL de la base de datos PostgreSQL, secretos de encriptación JWT, correos de superadmin, credenciales de Cloudinary, puertos). **Regla de oro:** Jamás se sube el archivo `.env` real al repositorio, cualquier desarrollador nuevo debe clonar este `.env.example`.
 - **`package.json`**: Define las dependencias del proyecto (NestJS, Prisma, Bcrypt, Class-Validator) y los scripts de ejecución (`npm run start:dev`, `npm run seed`, etc.).
 - **`.eslintrc.js` y `.prettierrc`**: Aseguran que todo el equipo de desarrollo mantenga el mismo estándar estricto de estilo de código (linting y formateo automático).
 
 ## 🧪 Pruebas y Documentación de la API
 
-Las pruebas de los endpoints y flujos de negocio (ciclo de vida del inventario, horómetros, bajas lógicas, control de acceso) se validan a través de **Postman**. 
+Las pruebas de los endpoints y flujos de negocio (ciclo de vida del inventario, horómetros, bajas lógicas, control de acceso) se validan a través de **Postman**.

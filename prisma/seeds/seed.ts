@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedPlantillasChecklist } from './plantillas-checklist.seed.js';
 
 const prisma = new PrismaClient();
 
@@ -299,6 +300,8 @@ async function main() {
       },
     },
   });
+
+  await seedPlantillasChecklist(prisma);
 
   console.log('✅ Seed ejecutado correctamente.');
 }

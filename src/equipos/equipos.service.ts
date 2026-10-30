@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EstadoEquipo, FiltrosEquiposDto } from './dto/filtro-equipos.dto.js';
 import { EquipoListItemEntity, EquipoDetalleEntity, EquipoConRelacionesPrisma } from './entities/equipo.entity.js';
+import { HorometroHelper } from '../common/helpers/horometro.helper.js';
 import { CreateEquipoDto, UpdateEquipoDto } from './dto/index.js';
 
 
@@ -293,30 +294,20 @@ export class EquiposService {
   }
 
 
-  // Actualiza el horómetro del equipo. SOlo aplicable a máquinas
-  async actualizarHoras (id: number, nuevasHoras: number): Promise<EquipoDetalleEntity> {
-
+  // Actualiza el horómetro del equipo. Solo aplicable a máquinas
+  async actualizarHoras(id: number, nuevasHoras: number): Promise<EquipoDetalleEntity> {
     const equipo = await this.obtenerEquipoActivoOrThrow(id);
 
     const esMaquina = Boolean(equipo.maquina);
-
-    if (!esMaquina) throw new BadRequestException('No se pueden registrar horas de motor en un aditamento');
+    if (!esMaquina) {
+      throw new BadRequestException('No se pueden registrar horas de motor en un aditamento');
+    }
 
     const horasActuales = equipo.maquina?.horas_motor_actual ?? 0;
 
-    if (nuevasHoras < horasActuales) throw new BadRequestException(`Las horas no pueden ser menores a las actuales (${horasActuales})`);
+    HorometroHelper.validarNuevasHoras(nuevasHoras, horasActuales);
 
-    await this.prisma.equipo.update({
-      where: { id },
-      data: {
-        maquina: {
-          update: {
-            horas_motor_actual: nuevasHoras,
-            horas_actualizadas_en: new Date(),
-          },
-        },
-      },
-    });
+    await HorometroHelper.actualizarHorasConcurrenciaSegura(this.prisma, id, nuevasHoras);
 
     return this.findOnePrivado(id);
   }

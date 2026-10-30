@@ -170,7 +170,7 @@ Módulo de negocio central que administra el ciclo de vida de los checklists ope
   - `parse-checklist-datos.interceptor.ts`: Interceptor que solventa la limitación de Multer al recibir envíos mixtos (`multipart/form-data`). Extrae el campo de texto `datos` enviado en formato JSON serializado por el cliente, lo parsea a un objeto JavaScript nativo y lo inyecta en `request.body`. Esto permite que el `ValidationPipe` global de NestJS y los decoradores de `class-validator` actúen sobre el DTO tipado sin perder compatibilidad con el streaming de fotos.
 
 - **`public-checklists.controller.ts` (Controlador de Acceso Público)**
-  - Expone los endpoints de libre acceso para operarios en campo sin requerir autenticación JWT (decorados con `@Public()`), pero blindados contra abuso mediante `@Throttle()` (`ThrottlerGuard`). Conecta el interceptor de archivos (`FilesInterceptor('fotos')`), el interceptor de parseo (`ParseChecklistDatosInterceptor`) y el pipe de validación multimedia (`ParseImagesPipe`) en una canalización secuencial y declarativa.
+  - Expone los endpoints de libre acceso para operarios en campo sin requerir autenticación JWT (decorados con `@Public()`). Conecta el interceptor de archivos (`FilesInterceptor('fotos')`), el interceptor de parseo (`ParseChecklistDatosInterceptor`) y el pipe de validación multimedia (`ParseImagesPipe`) en una canalización secuencial y declarativa.
 
 - **`checklists.service.ts` (Orquestación del Dominio y Transacciones)**
   - Coordina el flujo completo de inspecciones:

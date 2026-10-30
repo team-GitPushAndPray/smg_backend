@@ -1,7 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import { memoryStorage } from 'multer';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { ChecklistsService } from './checklists.service.js';
 import { CrearChecklistDto } from './dto/create-checklist.dto.js';
@@ -12,8 +11,6 @@ import { ParseImagesPipe } from '../common/pipes/parse-images.pipe.js';
 
 @Public()
 @Controller('public/checklists')
-@UseGuards(ThrottlerGuard)
-@Throttle({ default: { limit: 30, ttl: 60000 } })
 export class PublicChecklistsController {
   constructor(private readonly checklistsService: ChecklistsService) {}
 

@@ -181,17 +181,19 @@ model PlantillaItem {
 
 
 model Checklist {
-  id            Int                  @id @default(autoincrement())
-  tipo          TipoChecklist
-  fecha         DateTime             @default(now())
-  equipo_id     Int
-  usuario_id    Int?                 
-  horas_motor   Int?                 
-  observaciones String?              @db.Text
+  id                   Int                  @id @default(autoincrement())
+  tipo                 TipoChecklist
+  fecha                DateTime             @default(now())
+  equipo_id            Int
+  usuario_id           Int?                 
+  responsable_nombre   String               @db.VarChar(60) 
+  responsable_apellido String               @db.VarChar(60) 
+  horas_motor          Int?                 
+  observaciones        String?              @db.Text
 
-  equipo        Equipo               @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
-  respuestas    ChecklistRespuesta[]
-  fotos         ChecklistFoto[]      
+  equipo               Equipo               @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
+  respuestas           ChecklistRespuesta[]
+  fotos                ChecklistFoto[]      
 
   @@map("checklist")
 }

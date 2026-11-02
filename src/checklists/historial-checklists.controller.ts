@@ -18,4 +18,12 @@ export class HistorialChecklistsController {
   ) {
     return this.historialChecklistsService.findAllByEquipo(id, query);
   }
+
+  @Get(':checklistId')
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('checklistId', ParseIntPipe) checklistId: number,
+  ) {
+    return this.historialChecklistsService.findOneByEquipo(id, checklistId);
+  }
 }

@@ -1,17 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Matches,
-  Max,
-  Min,
-  Validate,
-  ValidatorConstraint,
-  ValidatorConstraintInterface,
-  ValidationArguments,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, Min, Validate, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
 import { TipoChecklist } from '@prisma/client';
 
 function isRealCalendarDate(dateStr: string): boolean {
@@ -25,7 +13,7 @@ function isRealCalendarDate(dateStr: string): boolean {
   );
 }
 
-// 1. Validador individual de existencia en calendario (ej. rechaza 2026-02-31)
+// Validador individual de existencia en calendario (ej. rechaza 2026-02-31)
 @ValidatorConstraint({ name: 'IsCalendarDate', async: false })
 export class IsCalendarDateConstraint implements ValidatorConstraintInterface {
   validate(value: string): boolean {
@@ -38,13 +26,13 @@ export class IsCalendarDateConstraint implements ValidatorConstraintInterface {
   }
 }
 
-// 2. Validador cruzado de rango (se evalúa una sola vez sobre "hasta")
+// Validador cruzado de rango (se evalúa una sola vez sobre "hasta")
 @ValidatorConstraint({ name: 'IsAfterOrEqualDesde', async: false })
 export class IsAfterOrEqualDesdeConstraint implements ValidatorConstraintInterface {
   validate(hasta: string, args: ValidationArguments): boolean {
     const obj = args.object as GetHistorialChecklistsQueryDto;
     if (!obj.desde || !hasta) return true;
-    if (!isRealCalendarDate(obj.desde) || !isRealCalendarDate(hasta)) return true; // Deja que IsCalendarDate maneje el error de formato
+    if (!isRealCalendarDate(obj.desde) || !isRealCalendarDate(hasta)) return true; 
     return obj.desde <= hasta;
   }
 
@@ -66,7 +54,7 @@ export class GetHistorialChecklistsQueryDto {
     message: 'El parámetro "hasta" debe tener el formato YYYY-MM-DD',
   })
   @Validate(IsCalendarDateConstraint)
-  @Validate(IsAfterOrEqualDesdeConstraint) // Solo aquí se valida la comparación
+  @Validate(IsAfterOrEqualDesdeConstraint)
   hasta?: string;
 
   @IsOptional()

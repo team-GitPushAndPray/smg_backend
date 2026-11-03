@@ -60,6 +60,8 @@ model Usuario {
 
   rol              Rol       @relation(fields: [rol_id], references: [id])
 
+  alquileres Alquiler[]
+
   @@map("usuarios") 
 }
 
@@ -88,6 +90,7 @@ model Equipo {
   maquina        Maquina?
   aditamento     Aditamento?
   checklist       Checklist[]
+  alquileres AlquilerEquipo[]
 
   @@map("equipos")
 }
@@ -160,6 +163,13 @@ enum EstadoEquipo {
   fuera_de_servicio
 }
 
+enum EstadoAlquiler {
+  PENDIENTE
+  ACTIVO
+  FINALIZADO
+  ANULADO
+}
+
 
 model PlantillaChecklist {
   id     Int             @id @default(autoincrement())
@@ -200,10 +210,14 @@ model Checklist {
 
   equipo               Equipo               @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
   respuestas           ChecklistRespuesta[]
-  fotos                ChecklistFoto[]      
+  fotos                ChecklistFoto[]   
+
+  alquiler_entrega    AlquilerEquipo? @relation("ChecklistEntrega")
+  alquiler_devolucion AlquilerEquipo? @relation("ChecklistDevolucion")   
 
   @@map("checklist")
 }
+
 
 model ChecklistRespuesta {
   id                Int           @id @default(autoincrement())
@@ -228,4 +242,66 @@ model ChecklistFoto {
   checklist    Checklist @relation(fields: [checklist_id], references: [id], onDelete: Restrict)
 
   @@map("checklist_foto")
+}
+
+
+model Cliente {
+  id              Int      @id @default(autoincrement())
+  razon_social    String
+  cuit            String?  @unique
+  contacto_nombre String?
+  telefono        String?
+  email           String?
+  direccion       String?
+  localidad       String?
+  observaciones   String?
+  activo          Boolean  @default(true)
+  creado_en       DateTime @default(now())
+  actualizado_en  DateTime @updatedAt
+
+  alquileres Alquiler[]
+
+  @@map("clientes")
+}
+
+
+model Alquiler {
+  id                     Int            @id @default(autoincrement())
+  cliente_id             Int
+  usuario_id             Int
+  estado                 EstadoAlquiler @default(PENDIENTE)
+  fecha_inicio           DateTime       @db.Date
+  fecha_fin_prevista     DateTime       @db.Date
+  latitud                Decimal        @db.Decimal(9, 6)
+  longitud               Decimal        @db.Decimal(9, 6)
+  ubicacion_referencia   String
+  contacto_obra_nombre   String?
+  contacto_obra_telefono String?
+  observaciones          String?
+  motivo_anulacion       String?
+  creado_en              DateTime       @default(now())
+  actualizado_en         DateTime       @updatedAt
+
+  cliente Cliente          @relation(fields: [cliente_id], references: [id], onDelete: Restrict)
+  usuario Usuario          @relation(fields: [usuario_id], references: [id], onDelete: Restrict)
+  equipos AlquilerEquipo[]
+
+  @@map("alquileres")
+}
+
+
+model AlquilerEquipo {
+  id                      Int  @id @default(autoincrement())
+  alquiler_id             Int
+  equipo_id               Int
+  checklist_entrega_id    Int? @unique
+  checklist_devolucion_id Int? @unique
+
+  alquiler             Alquiler   @relation(fields: [alquiler_id], references: [id], onDelete: Restrict)
+  equipo               Equipo     @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
+  checklist_entrega    Checklist? @relation("ChecklistEntrega", fields: [checklist_entrega_id], references: [id], onDelete: Restrict)
+  checklist_devolucion Checklist? @relation("ChecklistDevolucion", fields: [checklist_devolucion_id], references: [id], onDelete: Restrict)
+
+  @@unique([alquiler_id, equipo_id])
+  @@map("alquiler_equipo")
 }

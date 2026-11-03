@@ -170,14 +170,22 @@ enum EstadoAlquiler {
   ANULADO
 }
 
+enum AplicaA {
+  MAQUINA
+  ADITAMENTO
+}
+
 
 model PlantillaChecklist {
-  id     Int             @id @default(autoincrement())
-  tipo   TipoPlantilla   @unique
-  nombre String
+  id       Int             @id @default(autoincrement())
+  nombre   String          @unique
+  tipo     TipoPlantilla
+  aplica_a AplicaA?
+  activo   Boolean         @default(true)
 
-  items  PlantillaItem[]
+  items    PlantillaItem[]
 
+  @@unique([tipo, aplica_a])
   @@map("plantilla_checklist")
 }
 

@@ -1,22 +1,13 @@
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { EstadoEquipo } from '@prisma/client';
 import { PaginationDto } from '../../common/dto/pagination.dto.js';
 
 export const TIPOS_EQUIPO = ['maquina', 'aditamento'] as const;
-export type TipoEquipo = (typeof TIPOS_EQUIPO[number]);
-
-export const ESTADOS_EQUIPO = [
-    'disponible',
-    'alquilado',
-    'en_taller',
-    'fuera_de_servicio',
-] as const;
-
-export type EstadoEquipo = (typeof ESTADOS_EQUIPO)[number];
-
+export type TipoEquipo = (typeof TIPOS_EQUIPO)[number];
+export { EstadoEquipo };
 
 export class FiltrosEquiposDto extends PaginationDto {
-
   @IsOptional()
   @IsString()
   search?: string;
@@ -28,8 +19,8 @@ export class FiltrosEquiposDto extends PaginationDto {
   tipo?: TipoEquipo;
 
   @IsOptional()
-  @IsIn(ESTADOS_EQUIPO, {
-    message: 'Estado inválido. Valores permitidos: disponible, alquilado, en_taller, fuera_de_servicio',
+  @IsEnum(EstadoEquipo, {
+    message: `Estado inválido. Valores permitidos: ${Object.values(EstadoEquipo).join(', ')}`,
   })
   estado?: EstadoEquipo;
 

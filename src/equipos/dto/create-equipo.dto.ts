@@ -1,8 +1,9 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { TIPOS_EQUIPO } from './filtro-equipos.dto.js';
 import type { TipoEquipo } from './filtro-equipos.dto.js';
 import { IsMaquina } from '../decorators/is-maquina.decorator.js';
+import { EstadoEquipo } from '@prisma/client';
 
 const MAX_ANIO_PERMITIDO = new Date().getFullYear() + 1;
 
@@ -36,6 +37,12 @@ export class CreateEquipoDto {
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     @IsString({ message: 'descripcion debe ser un texto' })
     descripcion?: string;
+
+    @IsOptional()
+    @IsEnum(EstadoEquipo, {
+        message: `El estado debe ser uno de: ${Object.values(EstadoEquipo).join(', ')}`
+    })
+    estado?: EstadoEquipo;
 
 
     // CAMPOS EXCLUSIVOS DE MÁQUINA (obligatorios si tipo === 'maquina')

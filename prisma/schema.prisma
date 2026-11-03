@@ -77,7 +77,7 @@ model Equipo {
   codigo_interno String      @unique
   qr_token       String      @unique @default(uuid()) @db.Uuid
   marca          String?
-  estado         String
+  estado         EstadoEquipo   @default(disponible) 
   ubicacion      String?
   descripcion    String?
   activo         Boolean     @default(true)
@@ -151,6 +151,13 @@ enum EstadoItem {
   NORMAL
   ANORMAL
   NO_APLICA
+}
+
+enum EstadoEquipo {
+  disponible
+  alquilado
+  en_taller
+  fuera_de_servicio
 }
 
 

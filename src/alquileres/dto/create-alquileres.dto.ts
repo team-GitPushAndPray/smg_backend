@@ -1,7 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import { ArrayMinSize, ArrayUnique, IsArray, IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, MaxLength, Min, Validate, ValidationArguments, ValidatorConstraint, ValidatorConstraintInterface } from "class-validator";
 
-const trimOrNull = ({ value }: { value: unknown }) => {
+export const trimOrNull = ({ value }: { value: unknown }) => {
     if (value === null || value === undefined) return value;
     if (typeof value !== 'string') return value;
     const trimmed = value.trim();

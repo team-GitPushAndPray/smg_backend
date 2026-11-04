@@ -16,5 +16,6 @@ import { HistorialChecklistsService } from './historial-checklists.service.js';
     ChecklistsService,
     HistorialChecklistsService
   ],
+  exports: [ChecklistsService],
 })
 export class ChecklistsModule {}

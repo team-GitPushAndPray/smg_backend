@@ -16,7 +16,7 @@ export class ChecklistsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly imagesService: ImagesService,
-  ) {}
+  ) { }
 
   /**
    * Método centralizado para resolver la plantilla correspondiente a un equipo
@@ -72,7 +72,7 @@ export class ChecklistsService {
     if (!plantilla) {
       throw new NotFoundException(
         `No se encontró una plantilla activa para el tipo ${tipoChecklist}` +
-          (aplicaA ? ` (${aplicaA})` : ''),
+        (aplicaA ? ` (${aplicaA})` : ''),
       );
     }
 
@@ -111,9 +111,10 @@ export class ChecklistsService {
     }
 
     const esMaquina = equipo.maquina !== null;
-    const tiposChecklistHabilitados = esMaquina
-      ? TIPOS_HABILITADOS_MAQUINA
-      : TIPOS_HABILITADOS_ADITAMENTO;
+    const tiposChecklistHabilitados =
+      (esMaquina ? TIPOS_HABILITADOS_MAQUINA : TIPOS_HABILITADOS_ADITAMENTO)
+        .filter((tipo) => tipo === TipoChecklist.DIARIO || tipo === TipoChecklist.MANTENIMIENTO,
+        );
 
     const opciones: PublicChecklistOpcionResponse[] = await Promise.all(
       tiposChecklistHabilitados.map(async (tipoChecklist) => {
@@ -156,6 +157,15 @@ export class ChecklistsService {
   ): Promise<CreatedChecklistResponseEntity> {
     if (!isUUID(qrToken)) throw new NotFoundException('Equipo no encontrado');
 
+    if (
+      dto.tipo === TipoChecklist.ENTREGA ||
+      dto.tipo === TipoChecklist.DEVOLUCION
+    ) {
+      throw new BadRequestException(
+        'Las entregas y devoluciones se registran desde el módulo de alquileres',
+      );
+    }
+
     const equipo = await this.prisma.equipo.findUnique({
       where: { qr_token: qrToken },
       select: { id: true },
@@ -175,8 +185,9 @@ export class ChecklistsService {
       },
     );
   }
+  
 
-    async crearChecklistParaAlquiler(
+  async crearChecklistParaAlquiler(
     equipoId: number,
     tipoChecklist: TipoChecklist,
     dtoDatos: Omit<CrearChecklistDto, 'tipo'>,
@@ -274,7 +285,7 @@ export class ChecklistsService {
     return resumen;
   }
 
-  
+
   private async procesarPersistenciaChecklist(
     equipoId: number,
     tipoChecklist: TipoChecklist,
@@ -375,5 +386,5 @@ export class ChecklistsService {
       fotos: checklistCreado.fotos.map((f) => f.url),
     };
   }
-  
+
 }

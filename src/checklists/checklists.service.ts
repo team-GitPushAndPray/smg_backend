@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import 'multer';
-import { AplicaA, EstadoItem, TipoChecklist, TipoPlantilla } from '@prisma/client';
+import { AplicaA, EstadoItem, Prisma, TipoChecklist, TipoPlantilla } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { HorometroHelper } from '../common/helpers/horometro.helper.js';
 import { ImagesService } from '../images/images.service.js';
@@ -158,92 +158,51 @@ export class ChecklistsService {
 
     const equipo = await this.prisma.equipo.findUnique({
       where: { qr_token: qrToken },
-      include: { maquina: true },
+      select: { id: true },
     });
 
-    if (!equipo || !equipo.activo) throw new NotFoundException('Equipo no encontrado');
+    if (!equipo) throw new NotFoundException('Equipo no encontrado');
 
-    const esMaquina = equipo.maquina !== null;
-
-    this.validarTipoChecklistPermitido(dto.tipo, esMaquina);
-
-    const horasAnteriores = esMaquina ? equipo.maquina!.horas_motor_actual : null;
-    const horasMotorGuardar = esMaquina
-      ? HorometroHelper.validarNuevasHoras(dto.horas_motor, horasAnteriores!)
-      : null;
-
-    const plantilla = await this.resolverPlantilla(dto.tipo, equipo.id);
-
-    this.validarIntegridadRespuestas(
-      dto.respuestas,
-      plantilla.items.map((i) => i.id),
-    );
-
-    const urlsFotos = await this.imagesService.subirMultiples(
+    return this.procesarPersistenciaChecklist(
+      equipo.id,
+      dto.tipo,
+      dto,
       fotos,
-      'checklists',
+      {
+        nombre: dto.responsable_nombre,
+        apellido: dto.responsable_apellido,
+        usuarioId: null,
+      },
     );
+  }
 
-    const checklistCreado = await this.prisma.$transaction(async (tx) => {
-      if (esMaquina && horasMotorGuardar !== null) {
-        const resultadoUpdate = await tx.maquina.updateMany({
-          where: {
-            equipo_id: equipo.id,
-            horas_motor_actual: { lte: horasMotorGuardar },
-          },
-          data: {
-            horas_motor_actual: horasMotorGuardar,
-            horas_actualizadas_en: new Date(),
-          },
-        });
-
-        if (resultadoUpdate.count === 0) {
-          throw new BadRequestException(
-            'Las horas del equipo fueron actualizadas recientemente por otro operario con un valor mayor',
-          );
-        }
-      }
-
-      const observacionesLimpias = dto.observaciones?.trim() || null;
-
-      return tx.checklist.create({
-        data: {
-          equipo_id: equipo.id,
-          tipo: dto.tipo,
-          horas_motor: horasMotorGuardar,
-          responsable_nombre: dto.responsable_nombre.trim(),
-          responsable_apellido: dto.responsable_apellido.trim(),
-          observaciones: observacionesLimpias,
-          respuestas: {
-            create: dto.respuestas.map((r) => ({
-              plantilla_item_id: r.plantilla_item_id,
-              estado: r.estado,
-            })),
-          },
-          fotos: {
-            create: urlsFotos.map((url) => ({ url })),
-          },
-        },
-        include: {
-          fotos: {
-            select: { url: true },
-          },
-        },
-      });
-    });
-
-    const resumen = this.calcularResumenRespuestas(dto.respuestas);
-
-    return {
-      id: checklistCreado.id,
-      tipo: checklistCreado.tipo,
-      fecha: checklistCreado.fecha,
-      equipo: equipo.codigo_interno,
-      horas_anteriores: horasAnteriores,
-      horas_motor: horasMotorGuardar,
-      resumen,
-      fotos: checklistCreado.fotos.map((f) => f.url),
+    async crearChecklistParaAlquiler(
+    equipoId: number,
+    tipoChecklist: TipoChecklist,
+    dtoDatos: Omit<CrearChecklistDto, 'tipo'>,
+    fotos: Express.Multer.File[],
+    usuarioAuth: { id: number; nombre: string; apellido: string },
+    txClient?: Prisma.TransactionClient,
+  ) {
+    const dtoCompleto: CrearChecklistDto = {
+      ...dtoDatos,
+      tipo: tipoChecklist,
+      responsable_nombre: usuarioAuth.nombre,
+      responsable_apellido: usuarioAuth.apellido,
     };
+
+    return this.procesarPersistenciaChecklist(
+      equipoId,
+      tipoChecklist,
+      dtoCompleto,
+      fotos,
+      {
+        nombre: usuarioAuth.nombre,
+        apellido: usuarioAuth.apellido,
+        usuarioId: usuarioAuth.id,
+      },
+      txClient,
+    );
   }
 
 
@@ -313,6 +272,108 @@ export class ChecklistsService {
     }
 
     return resumen;
+  }
+
+  
+  private async procesarPersistenciaChecklist(
+    equipoId: number,
+    tipoChecklist: TipoChecklist,
+    dto: CrearChecklistDto,
+    fotos: Express.Multer.File[],
+    responsable: { nombre: string; apellido: string; usuarioId: number | null },
+    txClient?: Prisma.TransactionClient,
+  ) {
+    const prisma = txClient ?? this.prisma;
+
+    const equipo = await prisma.equipo.findUnique({
+      where: { id: equipoId },
+      include: { maquina: true },
+    });
+
+    if (!equipo || !equipo.activo) {
+      throw new NotFoundException(`Equipo con ID ${equipoId} no encontrado o inactivo`);
+    }
+
+    const esMaquina = equipo.maquina !== null;
+    this.validarTipoChecklistPermitido(tipoChecklist, esMaquina);
+
+    const horasAnteriores = esMaquina ? equipo.maquina!.horas_motor_actual : null;
+    const horasMotorGuardar = esMaquina
+      ? HorometroHelper.validarNuevasHoras(dto.horas_motor ?? 0, horasAnteriores!)
+      : null;
+
+    const plantilla = await this.resolverPlantilla(tipoChecklist, equipo.id);
+
+    this.validarIntegridadRespuestas(
+      dto.respuestas,
+      plantilla.items.map((i) => i.id),
+    );
+
+    const urlsFotos = await this.imagesService.subirMultiples(fotos, 'checklists');
+
+    const ejecutarOperacion = async (tx: Prisma.TransactionClient) => {
+      if (esMaquina && horasMotorGuardar !== null) {
+        const resultadoUpdate = await tx.maquina.updateMany({
+          where: {
+            equipo_id: equipo.id,
+            horas_motor_actual: { lte: horasMotorGuardar },
+          },
+          data: {
+            horas_motor_actual: horasMotorGuardar,
+            horas_actualizadas_en: new Date(),
+          },
+        });
+
+        if (resultadoUpdate.count === 0) {
+          throw new BadRequestException(
+            'Las horas del equipo fueron actualizadas recientemente por otro operario con un valor mayor',
+          );
+        }
+      }
+
+      const observacionesLimpias = dto.observaciones?.trim() || null;
+
+      return tx.checklist.create({
+        data: {
+          equipo_id: equipo.id,
+          tipo: tipoChecklist,
+          horas_motor: horasMotorGuardar,
+          usuario_id: responsable.usuarioId,
+          responsable_nombre: responsable.nombre.trim(),
+          responsable_apellido: responsable.apellido.trim(),
+          observaciones: observacionesLimpias,
+          respuestas: {
+            create: dto.respuestas.map((r) => ({
+              plantilla_item_id: r.plantilla_item_id,
+              estado: r.estado,
+            })),
+          },
+          fotos: {
+            create: urlsFotos.map((url) => ({ url })),
+          },
+        },
+        include: {
+          fotos: { select: { url: true } },
+        },
+      });
+    };
+
+    const checklistCreado = txClient
+      ? await ejecutarOperacion(txClient)
+      : await this.prisma.$transaction(async (tx) => ejecutarOperacion(tx));
+
+    const resumen = this.calcularResumenRespuestas(dto.respuestas);
+
+    return {
+      id: checklistCreado.id,
+      tipo: checklistCreado.tipo,
+      fecha: checklistCreado.fecha,
+      equipo: equipo.codigo_interno,
+      horas_anteriores: horasAnteriores,
+      horas_motor: horasMotorGuardar,
+      resumen,
+      fotos: checklistCreado.fotos.map((f) => f.url),
+    };
   }
   
 }

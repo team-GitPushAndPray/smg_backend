@@ -1,13 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { EstadoAlquiler, EstadoEquipo, Prisma } from '@prisma/client';
+import { EstadoAlquiler, EstadoEquipo, Prisma, TipoChecklist } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ChecklistsService } from '../checklists/checklists.service.js';
 import { AnularAlquilerDto, CreateAlquilerDto, GetAlquileresQueryDto, UpdateAlquilerDto } from './dto/index.js';
 
 const DIAS_POR_VENCER = 7;
 
 @Injectable()
 export class AlquileresService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly checklistsService: ChecklistsService,
+  ) { }
 
   private async obtenerAlquilerFormateado(
     tx: Prisma.TransactionClient | PrismaService,
@@ -213,21 +217,21 @@ export class AlquileresService {
           tipo,
           entrega: ae.checklist_entrega
             ? {
-                checklist_id: ae.checklist_entrega.id,
-                fecha: ae.checklist_entrega.fecha,
-                responsable_nombre: ae.checklist_entrega.responsable_nombre,
-                responsable_apellido: ae.checklist_entrega.responsable_apellido,
-                horas_motor: ae.checklist_entrega.horas_motor,
-              }
+              checklist_id: ae.checklist_entrega.id,
+              fecha: ae.checklist_entrega.fecha,
+              responsable_nombre: ae.checklist_entrega.responsable_nombre,
+              responsable_apellido: ae.checklist_entrega.responsable_apellido,
+              horas_motor: ae.checklist_entrega.horas_motor,
+            }
             : null,
           devolucion: ae.checklist_devolucion
             ? {
-                checklist_id: ae.checklist_devolucion.id,
-                fecha: ae.checklist_devolucion.fecha,
-                responsable_nombre: ae.checklist_devolucion.responsable_nombre,
-                responsable_apellido: ae.checklist_devolucion.responsable_apellido,
-                horas_motor: ae.checklist_devolucion.horas_motor,
-              }
+              checklist_id: ae.checklist_devolucion.id,
+              fecha: ae.checklist_devolucion.fecha,
+              responsable_nombre: ae.checklist_devolucion.responsable_nombre,
+              responsable_apellido: ae.checklist_devolucion.responsable_apellido,
+              horas_motor: ae.checklist_devolucion.horas_motor,
+            }
             : null,
         };
       }),
@@ -425,4 +429,164 @@ export class AlquileresService {
       return this.obtenerAlquilerFormateado(tx, id);
     });
   }
+
+
+  async obtenerDatosFormularioChecklist(
+    alquilerId: number,
+    equipoId: number,
+    tipo: TipoChecklist,
+  ) {
+    if (tipo !== TipoChecklist.ENTREGA && tipo !== TipoChecklist.DEVOLUCION) {
+      throw new BadRequestException('El tipo de checklist debe ser ENTREGA o DEVOLUCION');
+    }
+
+    const alquilerEquipo = await this.prisma.alquilerEquipo.findUnique({
+      where: {
+        alquiler_id_equipo_id: {
+          alquiler_id: alquilerId,
+          equipo_id: equipoId,
+        },
+      },
+      include: {
+        alquiler: {
+          include: {
+            cliente: { select: { razon_social: true } },
+          },
+        },
+        equipo: {
+          include: {
+            categoria: { select: { nombre: true } },
+            maquina: { select: { horas_motor_actual: true } },
+          },
+        },
+      },
+    });
+
+    if (!alquilerEquipo) {
+      throw new NotFoundException(`El equipo con ID ${equipoId} no pertenece al alquiler ${alquilerId}`);
+    }
+
+    if (tipo === TipoChecklist.ENTREGA) {
+      if (
+        alquilerEquipo.alquiler.estado !== EstadoAlquiler.PENDIENTE &&
+        alquilerEquipo.alquiler.estado !== EstadoAlquiler.ACTIVO
+      ) {
+        throw new ConflictException('El alquiler no se encuentra en estado PENDIENTE o ACTIVO');
+      }
+      if (alquilerEquipo.checklist_entrega_id !== null) {
+        throw new ConflictException('Este equipo ya cuenta con un checklist de entrega registrado');
+      }
+    }
+
+    if (tipo === TipoChecklist.DEVOLUCION) {
+      if (alquilerEquipo.checklist_entrega_id === null) {
+        throw new ConflictException('No se puede realizar la devolución de un equipo sin entrega previa');
+      }
+      if (alquilerEquipo.checklist_devolucion_id !== null) {
+        throw new ConflictException('Este equipo ya cuenta con un checklist de devolución registrado');
+      }
+    }
+
+    const plantilla = await this.checklistsService.resolverPlantilla(tipo, equipoId);
+    const esMaquina = alquilerEquipo.equipo.maquina !== null;
+
+    return {
+      plantilla: {
+        id: plantilla.id,
+        nombre: plantilla.nombre,
+        tipo: plantilla.tipo,
+        items: plantilla.items.map((i) => ({
+          id: i.id,
+          nombre: i.nombre,
+          orden: i.orden,
+        })),
+      },
+      alquiler: {
+        id: alquilerEquipo.alquiler.id,
+        cliente_razon_social: alquilerEquipo.alquiler.cliente.razon_social,
+        fecha_inicio: alquilerEquipo.alquiler.fecha_inicio,
+        fecha_fin_prevista: alquilerEquipo.alquiler.fecha_fin_prevista,
+        ubicacion_referencia: alquilerEquipo.alquiler.ubicacion_referencia,
+      },
+      equipo: {
+        id: alquilerEquipo.equipo.id,
+        codigo_interno: alquilerEquipo.equipo.codigo_interno,
+        categoria: alquilerEquipo.equipo.categoria?.nombre ?? null,
+        tipo: esMaquina ? 'MAQUINA' : 'ADITAMENTO',
+        horas_motor_actual: esMaquina
+          ? (alquilerEquipo.equipo.maquina?.horas_motor_actual ?? null)
+          : null,
+      },
+    };
+  }
+
+  async crearChecklistAlquiler(
+    alquilerId: number,
+    equipoId: number,
+    tipo: TipoChecklist,
+    dtoDatos: any,
+    fotos: Express.Multer.File[],
+    usuario: { id: number; nombre: string; apellido: string },
+  ) {
+    await this.obtenerDatosFormularioChecklist(alquilerId, equipoId, tipo);
+
+    return this.prisma.$transaction(async (tx) => {
+      const checklistRes = await this.checklistsService.crearChecklistParaAlquiler(
+        equipoId,
+        tipo,
+        dtoDatos,
+        fotos,
+        usuario,
+        tx,
+      );
+
+      if (tipo === TipoChecklist.ENTREGA) {
+        await tx.alquilerEquipo.update({
+          where: {
+            alquiler_id_equipo_id: { alquiler_id: alquilerId, equipo_id: equipoId },
+          },
+          data: { checklist_entrega_id: checklistRes.id },
+        });
+
+        const alquilerActual = await tx.alquiler.findUniqueOrThrow({ where: { id: alquilerId } });
+        if (alquilerActual.estado === EstadoAlquiler.PENDIENTE) {
+          await tx.alquiler.update({
+            where: { id: alquilerId },
+            data: { estado: EstadoAlquiler.ACTIVO },
+          });
+        }
+      } else if (tipo === TipoChecklist.DEVOLUCION) {
+        await tx.alquilerEquipo.update({
+          where: {
+            alquiler_id_equipo_id: { alquiler_id: alquilerId, equipo_id: equipoId },
+          },
+          data: { checklist_devolucion_id: checklistRes.id },
+        });
+
+        await tx.equipo.update({
+          where: { id: equipoId },
+          data: { estado: EstadoEquipo.disponible },
+        });
+
+        const equiposDelAlquiler = await tx.alquilerEquipo.findMany({
+          where: { alquiler_id: alquilerId },
+          select: { checklist_devolucion_id: true },
+        });
+
+        const todosDevueltos = equiposDelAlquiler.every(
+          (eq) => eq.checklist_devolucion_id !== null,
+        );
+
+        if (todosDevueltos) {
+          await tx.alquiler.update({
+            where: { id: alquilerId },
+            data: { estado: EstadoAlquiler.FINALIZADO },
+          });
+        }
+      }
+
+      return this.obtenerAlquilerFormateado(tx, alquilerId);
+    });
+  }
+
 }

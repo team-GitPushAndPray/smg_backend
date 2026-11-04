@@ -1,20 +1,41 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EstadoAlquiler, EstadoEquipo, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { CreateAlquilerDto } from './dto/create-alquileres.dto.js';
-import { GetAlquileresQueryDto } from './dto/get-alquileres-query.dto.js';
+import { AnularAlquilerDto, CreateAlquilerDto, GetAlquileresQueryDto, UpdateAlquilerDto } from './dto/index.js';
 
 const DIAS_POR_VENCER = 7;
 
 @Injectable()
 export class AlquileresService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor(private readonly prisma: PrismaService) { }
+  private async obtenerAlquilerFormateado(
+    tx: Prisma.TransactionClient | PrismaService,
+    id: number,
+  ) {
+    const alquiler = await tx.alquiler.findUniqueOrThrow({
+      where: { id },
+      include: {
+        cliente: {
+          select: {
+            id: true,
+            razon_social: true,
+          },
+        },
+        equipos: {
+          include: {
+            equipo: true,
+          },
+        },
+      },
+    });
 
+    return {
+      ...alquiler,
+      latitud: Number(alquiler.latitud),
+      longitud: Number(alquiler.longitud),
+    };
+  }
 
   async findAll(query: GetAlquileresQueryDto) {
     const { estado, cliente_id, equipo_id, por_vencer } = query;
@@ -45,7 +66,9 @@ export class AlquileresService {
       where.estado = { in: estado };
     }
 
-    const orderBy: Prisma.AlquilerOrderByWithRelationInput = por_vencer ? { fecha_fin_prevista: 'asc' } : { creado_en: 'desc' };
+    const orderBy: Prisma.AlquilerOrderByWithRelationInput = por_vencer
+      ? { fecha_fin_prevista: 'asc' }
+      : { creado_en: 'desc' };
 
     const alquileres = await this.prisma.alquiler.findMany({
       where,
@@ -104,7 +127,6 @@ export class AlquileresService {
     });
   }
 
-
   async findOne(id: number) {
     const alquiler = await this.prisma.alquiler.findUnique({
       where: { id },
@@ -156,7 +178,9 @@ export class AlquileresService {
       },
     });
 
-    if (!alquiler) throw new NotFoundException(`Alquiler con ID ${id} no encontrado`);
+    if (!alquiler) {
+      throw new NotFoundException(`Alquiler con ID ${id} no encontrado`);
+    }
 
     return {
       id: alquiler.id,
@@ -189,37 +213,41 @@ export class AlquileresService {
           tipo,
           entrega: ae.checklist_entrega
             ? {
-              checklist_id: ae.checklist_entrega.id,
-              fecha: ae.checklist_entrega.fecha,
-              responsable_nombre: ae.checklist_entrega.responsable_nombre,
-              responsable_apellido: ae.checklist_entrega.responsable_apellido,
-              horas_motor: ae.checklist_entrega.horas_motor,
-            }
+                checklist_id: ae.checklist_entrega.id,
+                fecha: ae.checklist_entrega.fecha,
+                responsable_nombre: ae.checklist_entrega.responsable_nombre,
+                responsable_apellido: ae.checklist_entrega.responsable_apellido,
+                horas_motor: ae.checklist_entrega.horas_motor,
+              }
             : null,
           devolucion: ae.checklist_devolucion
             ? {
-              checklist_id: ae.checklist_devolucion.id,
-              fecha: ae.checklist_devolucion.fecha,
-              responsable_nombre: ae.checklist_devolucion.responsable_nombre,
-              responsable_apellido: ae.checklist_devolucion.responsable_apellido,
-              horas_motor: ae.checklist_devolucion.horas_motor,
-            }
+                checklist_id: ae.checklist_devolucion.id,
+                fecha: ae.checklist_devolucion.fecha,
+                responsable_nombre: ae.checklist_devolucion.responsable_nombre,
+                responsable_apellido: ae.checklist_devolucion.responsable_apellido,
+                horas_motor: ae.checklist_devolucion.horas_motor,
+              }
             : null,
         };
       }),
     };
   }
 
-
   async create(dto: CreateAlquilerDto, usuarioId: number) {
     const cliente = await this.prisma.cliente.findUnique({
       where: { id: dto.cliente_id },
     });
 
-    if (!cliente) throw new NotFoundException(`Cliente con ID ${dto.cliente_id} no encontrado`);
+    if (!cliente) {
+      throw new NotFoundException(`Cliente con ID ${dto.cliente_id} no encontrado`);
+    }
 
-    if (!cliente.activo) throw new ConflictException(`El cliente "${cliente.razon_social}" se encuentra inactivo y no puede registrar alquileres`);
-
+    if (!cliente.activo) {
+      throw new ConflictException(
+        `El cliente "${cliente.razon_social}" se encuentra inactivo y no puede registrar alquileres`,
+      );
+    }
 
     const equipos = await this.prisma.equipo.findMany({
       where: { id: { in: dto.equipo_ids } },
@@ -245,12 +273,12 @@ export class AlquileresService {
 
     if (noDisponibles.length > 0) {
       const codigos = noDisponibles.map((e) => e.codigo_interno).join(', ');
-      throw new ConflictException(`Los siguientes equipos no están disponibles para alquilar: ${codigos}`);
+      throw new ConflictException(
+        `Los siguientes equipos no están disponibles para alquilar: ${codigos}`,
+      );
     }
 
-
-    const alquiler = await this.prisma.$transaction(async (tx) => {
-
+    return this.prisma.$transaction(async (tx) => {
       const nuevoAlquiler = await tx.alquiler.create({
         data: {
           cliente_id: dto.cliente_id,
@@ -285,31 +313,116 @@ export class AlquileresService {
         },
       });
 
-      if (resultadoUpdate.count !== dto.equipo_ids.length) throw new ConflictException('Uno o más equipos dejaron de estar disponibles simultáneamente. Operación cancelada.');
+      if (resultadoUpdate.count !== dto.equipo_ids.length) {
+        throw new ConflictException(
+          'Uno o más equipos dejaron de estar disponibles simultáneamente. Operación cancelada.',
+        );
+      }
 
-      return tx.alquiler.findUniqueOrThrow({
-        where: { id: nuevoAlquiler.id },
-        include: {
-          cliente: {
-            select: {
-              id: true,
-              razon_social: true,
-            },
-          },
-          equipos: {
-            include: {
-              equipo: true,
-            },
-          },
-        },
-      });
+      return this.obtenerAlquilerFormateado(tx, nuevoAlquiler.id);
     });
-
-    return {
-      ...alquiler,
-      latitud: Number(alquiler.latitud),
-      longitud: Number(alquiler.longitud),
-    };
   }
 
+  async update(id: number, dto: UpdateAlquilerDto) {
+    const alquiler = await this.prisma.alquiler.findUnique({
+      where: { id },
+    });
+
+    if (!alquiler) {
+      throw new NotFoundException(`Alquiler con ID ${id} no encontrado`);
+    }
+
+    if (
+      alquiler.estado !== EstadoAlquiler.PENDIENTE &&
+      alquiler.estado !== EstadoAlquiler.ACTIVO
+    ) {
+      throw new ConflictException(
+        `No se puede modificar un alquiler en estado ${alquiler.estado}`,
+      );
+    }
+
+    const data: Prisma.AlquilerUpdateInput = {};
+
+    if (dto.fecha_fin_prevista !== undefined) {
+      const nuevaFechaFin = new Date(dto.fecha_fin_prevista);
+      if (nuevaFechaFin < alquiler.fecha_inicio) {
+        throw new BadRequestException(
+          'La fecha_fin_prevista debe ser igual o posterior a fecha_inicio',
+        );
+      }
+      data.fecha_fin_prevista = nuevaFechaFin;
+    }
+
+    if (dto.latitud !== undefined && dto.longitud !== undefined) {
+      data.latitud = dto.latitud;
+      data.longitud = dto.longitud;
+    }
+
+    if (dto.ubicacion_referencia !== undefined) {
+      data.ubicacion_referencia = dto.ubicacion_referencia;
+    }
+
+    if (dto.contacto_obra_nombre !== undefined) {
+      data.contacto_obra_nombre = dto.contacto_obra_nombre;
+    }
+
+    if (dto.contacto_obra_telefono !== undefined) {
+      data.contacto_obra_telefono = dto.contacto_obra_telefono;
+    }
+
+    await this.prisma.alquiler.update({
+      where: { id },
+      data,
+    });
+
+    return this.obtenerAlquilerFormateado(this.prisma, id);
+  }
+
+  async anular(id: number, dto: AnularAlquilerDto) {
+    const alquiler = await this.prisma.alquiler.findUnique({
+      where: { id },
+      include: {
+        equipos: true,
+      },
+    });
+
+    if (!alquiler) {
+      throw new NotFoundException(`Alquiler con ID ${id} no encontrado`);
+    }
+
+    const tieneEntregas = alquiler.equipos.some(
+      (eq) => eq.checklist_entrega_id !== null,
+    );
+
+    if (alquiler.estado !== EstadoAlquiler.PENDIENTE || tieneEntregas) {
+      throw new ConflictException(
+        'Solo se puede anular un alquiler sin entregas',
+      );
+    }
+
+    const equipoIds = alquiler.equipos.map((eq) => eq.equipo_id);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.alquiler.update({
+        where: { id },
+        data: {
+          estado: EstadoAlquiler.ANULADO,
+          motivo_anulacion: dto.motivo,
+        },
+      });
+
+      if (equipoIds.length > 0) {
+        await tx.equipo.updateMany({
+          where: {
+            id: { in: equipoIds },
+          },
+          data: {
+            estado: EstadoEquipo.disponible,
+          },
+        });
+      }
+
+      return this.obtenerAlquilerFormateado(tx, id);
+    });
+  }
 }

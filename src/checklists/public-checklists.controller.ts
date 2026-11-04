@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { memoryStorage } from 'multer';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/decorators/public.decorator.js';

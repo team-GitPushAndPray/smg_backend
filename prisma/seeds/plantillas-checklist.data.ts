@@ -1,9 +1,17 @@
-import { TipoPlantilla } from '@prisma/client';
+import { AplicaA, TipoPlantilla } from '@prisma/client';
+
+export interface PlantillaItemSeedConfig {
+  nombre: string;
+  activo?: boolean;
+}
+
+export type ItemSeed = string | PlantillaItemSeedConfig;
 
 export interface PlantillaSeedConfig {
   tipo: TipoPlantilla;
   nombre: string;
-  items: readonly string[];
+  aplica_a: AplicaA | null;
+  items: readonly ItemSeed[];
 }
 
 // DRY: Única fuente de verdad para los 29 ítems de Diario y Mantenimiento
@@ -39,8 +47,9 @@ export const ITEMS_DIARIO_Y_MANTENIMIENTO: readonly string[] = [
   'Pérdidas de fluidos',
 ];
 
-// 23 ítems exclusivos de Alquileres (Entrega / Devolución)
-export const ITEMS_ALQUILERES: readonly string[] = [
+// Ítems para Alquiler — Máquina (incluye ítem administrativo 'Empresa' desactivado)
+export const ITEMS_ALQUILER_MAQUINA: readonly ItemSeed[] = [
+  { nombre: 'Empresa', activo: false },
   'Estado de rodillo compactador',
   'Conexiones hidráulicas',
   'Estado de mangueras',
@@ -66,20 +75,39 @@ export const ITEMS_ALQUILERES: readonly string[] = [
   'Prueba frente al cliente',
 ];
 
+// Ítems genéricos aprobados para Alquiler — Aditamento
+export const ITEMS_ALQUILER_ADITAMENTO: readonly string[] = [
+  'Estructura general / fisuras y soldaduras',
+  'Pernos y bujes',
+  'Mangueras y acoples hidráulicos',
+  'Desgaste de dientes / cuchilla / puntas',
+  'Sistema de enganche',
+  'Limpieza',
+];
+
 export const PLANTILLAS_CHECKLIST_SEED: readonly PlantillaSeedConfig[] = [
   {
     tipo: TipoPlantilla.DIARIO,
     nombre: 'Revisión diaria',
+    aplica_a: null,
     items: ITEMS_DIARIO_Y_MANTENIMIENTO,
   },
   {
     tipo: TipoPlantilla.MANTENIMIENTO,
     nombre: 'Mantenimiento',
+    aplica_a: null,
     items: ITEMS_DIARIO_Y_MANTENIMIENTO,
   },
   {
     tipo: TipoPlantilla.ALQUILERES,
-    nombre: 'Entrega / Devolución',
-    items: ITEMS_ALQUILERES,
+    nombre: 'Alquiler — Máquina',
+    aplica_a: AplicaA.MAQUINA,
+    items: ITEMS_ALQUILER_MAQUINA,
+  },
+  {
+    tipo: TipoPlantilla.ALQUILERES,
+    nombre: 'Alquiler — Aditamento',
+    aplica_a: AplicaA.ADITAMENTO,
+    items: ITEMS_ALQUILER_ADITAMENTO,
   },
 ];

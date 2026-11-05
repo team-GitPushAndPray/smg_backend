@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { EstadoEquipo, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { seedPlantillasChecklist } from './plantillas-checklist.seed.js';
 
@@ -23,7 +23,7 @@ async function main() {
   await prisma.modulo.deleteMany({
     where: {
       codigo: {
-        in: ['maquinas', 'configuracion', 'vendedores'],
+        in: ['maquinas', 'configuracion', 'vendedores', 'alquileres'],
       },
     },
   });
@@ -45,6 +45,12 @@ async function main() {
     where: { codigo: 'VENDEDORES' },
     update: { nombre: 'Vendedores' },
     create: { codigo: 'VENDEDORES', nombre: 'Vendedores' },
+  });
+
+  const modAlquileres = await prisma.modulo.upsert({
+    where: { codigo: 'ALQUILERES' },
+    update: { nombre: 'Alquileres' },
+    create: { codigo: 'ALQUILERES', nombre: 'Alquileres' },
   });
 
   // 4. Roles
@@ -120,7 +126,29 @@ async function main() {
     });
   }
 
-  // 6. Asignar CONFIGURACION y VENDEDORES a 'administrador' con puede_editar = true
+  // 6. Permisos para ALQUILERES (Issue Madre #75)
+  // superAdmin: pasa siempre por es_sistema: true
+  // administrador, logistica, taller: acceso sí, puede_editar: true
+  // servicio_tecnico: acceso sí, puede_editar: false
+  // personal: sin acceso (no se asocia fila en rolModulo)
+  const permisosAlquileres = [
+    { rolNombre: 'administrador', puede_editar: true },
+    { rolNombre: 'logistica', puede_editar: true },
+    { rolNombre: 'taller', puede_editar: true },
+    { rolNombre: 'servicio_tecnico', puede_editar: false },
+  ];
+
+  for (const permiso of permisosAlquileres) {
+    await prisma.rolModulo.create({
+      data: {
+        rol_id: rolesMap[permiso.rolNombre].id,
+        modulo_id: modAlquileres.id,
+        puede_editar: permiso.puede_editar,
+      },
+    });
+  }
+
+  // 7. Asignar CONFIGURACION y VENDEDORES a 'administrador'
   await prisma.rolModulo.create({
     data: {
       rol_id: rolesMap['administrador'].id,
@@ -137,7 +165,7 @@ async function main() {
     },
   });
 
-  // 7. Usuarios del sistema
+  // 8. Usuarios del sistema
   const hashedSuperAdminPassword = await bcrypt.hash(superAdminPassword, 10);
 
   await prisma.usuario.upsert({
@@ -210,12 +238,45 @@ async function main() {
     },
   });
 
+  await prisma.usuario.upsert({
+    where: { email: 'tecnico@smg.com' },
+    update: {
+      rol_id: rolesMap['servicio_tecnico'].id,
+      activo: true,
+      password: defaultTestPass,
+    },
+    create: {
+      nombre: 'Usuario',
+      apellido: 'Servicio Técnico',
+      email: 'tecnico@smg.com',
+      password: defaultTestPass,
+      rol_id: rolesMap['servicio_tecnico'].id,
+      activo: true,
+    },
+  });
+
+  await prisma.usuario.upsert({
+    where: { email: 'personal@smg.com' },
+    update: {
+      rol_id: rolesMap['personal'].id,
+      activo: true,
+      password: defaultTestPass,
+    },
+    create: {
+      nombre: 'Usuario',
+      apellido: 'Personal',
+      email: 'personal@smg.com',
+      password: defaultTestPass,
+      rol_id: rolesMap['personal'].id,
+      activo: true,
+    },
+  });
+
   // =====================================================================
-  // 8. Seed de Equipos para pruebas
+  // 9. Seed de Equipos para pruebas
   // =====================================================================
   console.log('🌱 Poblando categorías y equipos de prueba...');
 
-  // 8.1 Crear Categorías
   const catExcavadoras = await prisma.categoria.upsert({
     where: { nombre: 'Excavadoras' },
     update: {},
@@ -234,17 +295,15 @@ async function main() {
     create: { nombre: 'Martillos Hidráulicos', descripcion: 'Aditamentos de demolición' },
   });
 
-  // 8.2 Crear Equipos de tipo MÁQUINA
-  // Máquina 1 (Para probar flujo feliz)
   await prisma.equipo.upsert({
     where: { codigo_interno: 'EXC-001' },
-    update: { activo: true, estado: 'disponible' },
+    update: { activo: true, estado: EstadoEquipo.disponible },
     create: {
       codigo_interno: 'EXC-001',
       marca: 'Caterpillar',
       ubicacion: 'Base Neuquén',
       descripcion: 'Excavadora lista para uso',
-      estado: 'disponible',
+      estado: EstadoEquipo.disponible,
       activo: true,
       id_categoria: catExcavadoras.id,
       maquina: {
@@ -252,23 +311,22 @@ async function main() {
           modelo: '320D',
           anio: 2018,
           n_serie: 'CAT320D123456',
-          horas_motor_actual: 1500, // <--- Úsala para probar PATCH /horas
+          horas_motor_actual: 1500,
           horas_actualizadas_en: new Date(),
         },
       },
     },
   });
 
-  // Máquina 2 (Para probar que al dar de baja ya no se puede operar)
   await prisma.equipo.upsert({
     where: { codigo_interno: 'EXC-002' },
-    update: { activo: true, estado: 'en_taller' },
+    update: { activo: true, estado: EstadoEquipo.en_taller },
     create: {
       codigo_interno: 'EXC-002',
       marca: 'Komatsu',
       ubicacion: 'Taller Central',
       descripcion: 'Para probar bloqueos por baja',
-      estado: 'en_taller',
+      estado: EstadoEquipo.en_taller,
       activo: true,
       id_categoria: catExcavadoras.id,
       maquina: {
@@ -283,16 +341,15 @@ async function main() {
     },
   });
 
-  // 8.3 Crear Equipo de tipo ADITAMENTO (Para probar el error 400 de horas)
   await prisma.equipo.upsert({
     where: { codigo_interno: 'MRT-001' },
-    update: { activo: true, estado: 'disponible' },
+    update: { activo: true, estado: EstadoEquipo.disponible },
     create: {
       codigo_interno: 'MRT-001',
       marca: 'Atlas Copco',
       ubicacion: 'Depósito A',
       descripcion: 'Martillo para retroexcavadora',
-      estado: 'disponible',
+      estado: EstadoEquipo.disponible,
       activo: true,
       id_categoria: catMartillos.id,
       aditamento: {
@@ -300,6 +357,77 @@ async function main() {
       },
     },
   });
+
+  // =====================================================================
+  // 10. Seed de Clientes ficticios (Issue Madre #75 / Sub-issue #77)
+  // =====================================================================
+  console.log('🌱 Poblando clientes de prueba...');
+
+  const clientesSeed = [
+    {
+      razon_social: 'Constructora Del Valle S.A.',
+      cuit: '30-71001001-9',
+      contacto_nombre: 'Martín Gómez',
+      telefono: '+54 9 299 411-2233',
+      email: 'compras@constructoradelvalle.com.ar',
+      direccion: 'Av. Argentina 1250',
+      localidad: 'Neuquén Capital',
+      observaciones: 'Cliente frecuente para obras viales.',
+      activo: true,
+    },
+    {
+      razon_social: 'Servicios Petroleros Patagónicos S.R.L.',
+      cuit: '30-71002002-7',
+      contacto_nombre: 'Laura Fernández',
+      telefono: '+54 9 299 522-3344',
+      email: 'logistica@sppatagonicos.com.ar',
+      direccion: 'Ruta Provincial 7 Km 5',
+      localidad: 'Añelo',
+      observaciones: 'Opera en yacimientos de la cuenca neuquina.',
+      activo: true,
+    },
+    {
+      razon_social: 'Ingeniería y Montajes Austral S.A.',
+      cuit: '30-71003003-5',
+      contacto_nombre: 'Roberto Díaz',
+      telefono: '+54 9 299 633-4455',
+      email: 'rdiaz@imaustral.com.ar',
+      direccion: 'Parque Industrial Lote 14',
+      localidad: 'Centenario',
+      observaciones: null,
+      activo: true,
+    },
+    {
+      razon_social: 'Movimientos de Suelo Limay S.A.S.',
+      cuit: '30-71004004-3',
+      contacto_nombre: 'Carolina Silva',
+      telefono: '+54 9 299 444-5566',
+      email: 'administracion@sueloslimay.com.ar',
+      direccion: 'Juan B. Justo 480',
+      localidad: 'Plottier',
+      observaciones: 'Alquila minicargadoras con aditamentos.',
+      activo: true,
+    },
+    {
+      razon_social: 'Obras Civiles del Sur S.R.L.',
+      cuit: '30-71005005-1',
+      contacto_nombre: 'Jorge Morales',
+      telefono: '+54 9 299 555-6677',
+      email: 'contacto@obrasdelsur.com.ar',
+      direccion: 'San Martín 890',
+      localidad: 'Cipolletti',
+      observaciones: 'Cuenta inactiva por cierre de operaciones.',
+      activo: false,
+    },
+  ];
+
+  for (const c of clientesSeed) {
+    await prisma.cliente.upsert({
+      where: { cuit: c.cuit },
+      update: c,
+      create: c,
+    });
+  }
 
   await seedPlantillasChecklist(prisma);
 

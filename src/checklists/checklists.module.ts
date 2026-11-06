@@ -5,9 +5,14 @@ import { ImagesModule } from '../images/images.module.js';
 import { PublicChecklistsController } from './public-checklists.controller.js';
 import { HistorialChecklistsController } from './historial-checklists.controller.js';
 import { HistorialChecklistsService } from './historial-checklists.service.js';
+import { AvisosModule } from '../avisos/avisos.module.js';
 
 @Module({
-  imports: [PrismaModule, ImagesModule],
+  imports: [
+    PrismaModule, 
+    ImagesModule,
+    AvisosModule,
+  ],
   controllers: [
     PublicChecklistsController,
     HistorialChecklistsController

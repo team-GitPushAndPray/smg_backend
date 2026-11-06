@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "src/main.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/avisos/evaluar",
+      "schedule": "0 9 * * *"
+    }
   ]
 }

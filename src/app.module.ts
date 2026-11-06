@@ -17,6 +17,7 @@ import { ChecklistsModule } from './checklists/checklists.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { ClientesModule } from './clientes/clientes.module.js';
 import { AlquileresModule } from './alquileres/alquileres.module.js';
+import { AvisosModule } from './avisos/avisos.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -36,6 +37,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ChecklistsModule,
     ClientesModule,
     AlquileresModule,
+    AvisosModule,
   ],
   controllers: [AppController],
   providers: [PrismaService,

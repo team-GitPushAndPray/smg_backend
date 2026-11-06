@@ -3,8 +3,9 @@ import 'multer';
 import { AplicaA, EstadoItem, Prisma, TipoChecklist, TipoPlantilla } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { HorometroHelper } from '../common/helpers/horometro.helper.js';
-import { ImagesService } from '../images/images.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AvisosService } from '../avisos/avisos.service.js';
+import { ImagesService } from '../images/images.service.js';
 import { MAPA_OPCIONES_CHECKLIST, TIPOS_HABILITADOS_ADITAMENTO, TIPOS_HABILITADOS_MAQUINA } from './config/checklist-opciones.config.js';
 import { ChecklistRespuestaItemDto, CrearChecklistDto } from './dto/create-checklist.dto.js';
 import { ChecklistResumenResponse, CreatedChecklistResponseEntity } from './entities/created-checklist-response.entity.js';
@@ -16,6 +17,7 @@ export class ChecklistsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly imagesService: ImagesService,
+    private readonly avisosService: AvisosService
   ) { }
 
   /**
@@ -185,7 +187,7 @@ export class ChecklistsService {
       },
     );
   }
-  
+
 
   async crearChecklistParaAlquiler(
     equipoId: number,
@@ -344,7 +346,7 @@ export class ChecklistsService {
 
       const observacionesLimpias = dto.observaciones?.trim() || null;
 
-      return tx.checklist.create({
+      const nuevoChecklist = await tx.checklist.create({
         data: {
           equipo_id: equipo.id,
           tipo: tipoChecklist,
@@ -367,6 +369,12 @@ export class ChecklistsService {
           fotos: { select: { url: true } },
         },
       });
+
+      if (esMaquina) {
+        await this.avisosService.evaluarMaquina(equipo.id, tx);
+      }
+
+      return nuevoChecklist;
     };
 
     const checklistCreado = txClient

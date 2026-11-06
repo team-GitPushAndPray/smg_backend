@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AvisosService } from '../avisos/avisos.service.js';
 import { EstadoEquipo, FiltrosEquiposDto } from './dto/filtro-equipos.dto.js';
 import { EquipoListItemEntity, EquipoDetalleEntity, EquipoConRelacionesPrisma } from './entities/equipo.entity.js';
 import { HorometroHelper } from '../common/helpers/horometro.helper.js';
@@ -10,7 +11,10 @@ import { CreateEquipoDto, UpdateEquipoDto } from './dto/index.js';
 @Injectable()
 export class EquiposService {
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly avisosService: AvisosService,
+  ) {}
 
   private readonly defaultInclude = {
     categoria: true,
@@ -37,7 +41,7 @@ export class EquiposService {
 
   async findManyCatalogo(
     extraWhere: Prisma.EquipoWhereInput = {}, 
-    orderBy: Prisma.EquipoOrderByWithRelationInput = { id: 'desc' } // <-- Orden original de tu catálogo
+    orderBy: Prisma.EquipoOrderByWithRelationInput = { id: 'desc' }
   ) {
     return this.prisma.equipo.findMany({
       where: {
@@ -128,7 +132,7 @@ export class EquiposService {
   }
 
 
-  // 3. REGLAS DE DOMINIO PRIVADAS (SRP / DRY para Alta y Edición)
+  // REGLAS DE DOMINIO PRIVADAS (SRP / DRY para Alta y Edición)
 
   /** Verifica que el codigo_interno no exista (insensible a mayúsculas) */ 
   private async validarCodigoInternoUnico(
@@ -294,7 +298,7 @@ export class EquiposService {
   }
 
 
-  // Actualiza el horómetro del equipo. Solo aplicable a máquinas
+  // Actualiza el horómetro del equipo y evalúa avisos preventivos
   async actualizarHoras(id: number, nuevasHoras: number): Promise<EquipoDetalleEntity> {
     const equipo = await this.obtenerEquipoActivoOrThrow(id);
 
@@ -307,6 +311,7 @@ export class EquiposService {
 
     HorometroHelper.validarNuevasHoras(nuevasHoras, horasActuales);
 
+    await this.avisosService.evaluarMaquina(id);
     await HorometroHelper.actualizarHorasConcurrenciaSegura(this.prisma, id, nuevasHoras);
 
     return this.findOnePrivado(id);

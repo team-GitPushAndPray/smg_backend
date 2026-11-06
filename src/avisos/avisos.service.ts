@@ -1,14 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { CreateAvisoDto } from './dto/create-aviso.dto.js';
-import { UpdateAvisoDto } from './dto/update-aviso.dto.js';
-import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma, TipoAviso } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class AvisosService {
 
   constructor(private readonly prisma: PrismaService) {}
-
 
   /**
    * Evalúa una máquina por su ID (equipo_id) y genera los avisos de SERVICIO y CERTIFICACION correspondientes sin duplicar registros existentes
@@ -89,6 +86,37 @@ export class AvisosService {
     }
 
     return avisosCreados;
+  }
+
+  /**
+   * Evaluar todas las máquinas activas del sistema y ejecuta evaluarMaquina para cada una. Retorna los contadores para el cron diario
+   */
+  async evaluarTodasLasMaquinas(): Promise<{
+    maquinas_evaluadas: number;
+    avisos_creados: number;
+  }> {
+    const maquinasActivas = await this.prisma.maquina.findMany({
+      where: {
+        equipo: {
+          activo: true,
+        },
+      },
+      select: {
+        equipo_id: true,
+      },
+    });
+
+    let avisosCreadosTotal = 0;
+
+    for (const maquina of maquinasActivas) {
+      const creados = await this.evaluarMaquina(maquina.equipo_id);
+      avisosCreadosTotal += creados;
+    }
+
+    return {
+      maquinas_evaluadas: maquinasActivas.length,
+      avisos_creados: avisosCreadosTotal,
+    };
   }
 
 

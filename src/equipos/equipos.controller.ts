@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Req } from '@nestjs/common';
 import { EquiposService } from './equipos.service.js';
-import { FiltrosEquiposDto, CreateEquipoDto, UpdateEquipoDto, UpdateHorasEquipoDto, UpdateEstadoEquipoDto,  } from './dto/index.js';
+import { FiltrosEquiposDto, CreateEquipoDto, UpdateEquipoDto, UpdateHorasEquipoDto,UpdateEstadoEquipoDto } from './dto/index.js';
 import { Modulo } from '../auth/decorators/modulo.decorator.js';
 
 @Modulo('MAQUINAS')
@@ -29,8 +29,10 @@ export class EquiposController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEquipoDto: UpdateEquipoDto,
+    @Req() req: { user: { id?: number; sub?: number } },
   ) {
-    return this.equiposService.update(id, updateEquipoDto);
+    const usuarioId = Number(req.user.id ?? req.user.sub);
+    return this.equiposService.update(id, updateEquipoDto, usuarioId);
   }
 
   @Modulo('MAQUINAS', { editar: true })
@@ -41,7 +43,7 @@ export class EquiposController {
   ) {
     return this.equiposService.actualizarHoras(id, dto.horasMotorActual);
   }
-  
+
   @Modulo('MAQUINAS', { editar: true })
   @Patch(':id/estado')
   cambiarEstado(
@@ -57,6 +59,5 @@ export class EquiposController {
   darDeBaja(@Param('id', ParseIntPipe) id: number) {
     return this.equiposService.darDeBaja(id);
   }
-
 
 }

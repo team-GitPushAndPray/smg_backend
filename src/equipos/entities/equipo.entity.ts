@@ -1,7 +1,6 @@
 import { TipoEquipo } from '../dto/filtro-equipos.dto.js';
 
 export interface EquipoConRelacionesPrisma {
-
     id: number;
     codigo_interno: string;
     qr_token: string;
@@ -21,13 +20,13 @@ export interface EquipoConRelacionesPrisma {
         n_serie: string;
         horas_motor_actual: number;
         horas_actualizadas_en: Date | null;
+        certificacion_vence_el: Date | null;
     } | null;
     aditamento?: Record<string, any> | null;
 }
 
 // Entidad para el listado paginado: GET /api/equipos
 export class EquipoListItemEntity {
-
     id: number;
     codigoInterno: string;
     tipo: TipoEquipo;
@@ -41,13 +40,14 @@ export class EquipoListItemEntity {
     estado: string;
     horasMotorActual: number | null;
     horasActualizadasEn: Date | null;
+    certificacionVenceEl: Date | null;
 
     constructor(equipo: EquipoConRelacionesPrisma) {
         const esMaquina = Boolean(equipo.maquina);
 
         this.id = equipo.id;
         this.codigoInterno = equipo.codigo_interno;
-        this.tipo = esMaquina ? 'maquina': 'aditamento';
+        this.tipo = esMaquina ? 'maquina' : 'aditamento';
         this.nombre = equipo.categoria.nombre;
         this.marca = equipo.marca;
         this.modelo = esMaquina ? equipo.maquina!.modelo : null;
@@ -58,14 +58,12 @@ export class EquipoListItemEntity {
         this.estado = equipo.estado;
         this.horasMotorActual = esMaquina ? equipo.maquina!.horas_motor_actual : null;
         this.horasActualizadasEn = esMaquina ? equipo.maquina!.horas_actualizadas_en : null;
+        this.certificacionVenceEl = esMaquina ? equipo.maquina!.certificacion_vence_el : null;
     }
-  
 }
 
 // Entidad para el detalle: GET /api/equipos/:id
-
 export class EquipoDetalleEntity extends EquipoListItemEntity {
-
     qr_token: string;
     descripcion: string | null;
     ubicacion: string | null;

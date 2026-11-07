@@ -3,6 +3,7 @@ import { EstadoAviso, Prisma, TipoAviso } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FiltroAvisosDto } from './dto/filtro-avisos.dto.js';
 import { AtenderAvisoDto } from './dto/atender-aviso.dto.js';
+import { UpdateEscalonServicioDto } from './dto/update-escalon-servicio.dto.js';
 
 
 // Definición estricta de las relaciones requeridas por el Contrato de la API
@@ -384,4 +385,67 @@ export class AvisosService {
     const msPorDia = 1000 * 60 * 60 * 24;
     return Math.round((venceUtc - hoyUtc) / msPorDia);
   }
+
+
+  // TIPOS DE SERVICE - ESCALONES
+
+  /**
+   * GET /api/escalones-servicio
+   * Devuelve los 3 tipos de service ordenados por horas_intervalo ascendente.
+   */
+  async listarEscalones() {
+    return this.prisma.escalonServicio.findMany({
+      orderBy: { horas_intervalo: 'asc' },
+    });
+  }
+
+  /**
+   * PATCH /api/escalones-servicio/:id
+   * Actualiza únicamente la descripción del escalón de servicio horas_intervalo y nombre jamás se modifican.
+   */
+  async actualizarEscalon(id: number, dto: UpdateEscalonServicioDto) {
+    const escalon = await this.prisma.escalonServicio.findUnique({
+      where: { id },
+    });
+
+    if (!escalon) {
+      throw new NotFoundException(`El escalón de servicio con ID ${id} no existe`);
+    }
+
+    return this.prisma.escalonServicio.update({
+      where: { id },
+      data: {
+        descripcion: dto.descripcion,
+      },
+    });
+  }
+
+
+  /**
+   * Cierra todos los avisos CERTIFICACION pendientes de una máquina cuando se modifica su fecha de certificación y re-evalúa la máquina con la nueva fecha.
+   */
+  async procesarCambioCertificacion(
+    maquinaId: number,
+    usuarioId: number,
+    txClient?: Prisma.TransactionClient,
+  ) {
+    const db = txClient ?? this.prisma;
+
+    await db.aviso.updateMany({
+      where: {
+        maquina_id: maquinaId,
+        tipo: TipoAviso.CERTIFICACION,
+        estado: EstadoAviso.PENDIENTE,
+      },
+      data: {
+        estado: EstadoAviso.ATENDIDO,
+        nota_atencion: 'Certificación renovada',
+        atendido_por_id: usuarioId,
+        atendido_en: new Date(),
+      },
+    });
+
+    await this.evaluarMaquina(maquinaId, db);
+  }
+
 }

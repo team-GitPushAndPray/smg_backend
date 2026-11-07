@@ -1,10 +1,9 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 const MAX_ANIO_PERMITIDO = new Date().getFullYear() + 1;
 
 export class UpdateEquipoDto {
-
   @IsOptional()
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
@@ -38,9 +37,6 @@ export class UpdateEquipoDto {
   @IsString({ message: 'descripcion debe ser un texto' })
   descripcion?: string;
 
-
-  // CAMPOS EDITABLES SOLO EN MÁQUINAS (El service verificará el subtipo)
-
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString({ message: 'modelo debe ser un texto' })
@@ -50,9 +46,7 @@ export class UpdateEquipoDto {
   @IsOptional()
   @IsInt({ message: 'anio debe ser un número entero' })
   @Min(1950, { message: 'anio debe ser mayor o igual a 1950' })
-  @Max(MAX_ANIO_PERMITIDO, {
-    message: `anio no puede ser mayor a ${MAX_ANIO_PERMITIDO}`,
-  })
+  @Max(MAX_ANIO_PERMITIDO, { message: `anio no puede ser mayor a ${MAX_ANIO_PERMITIDO}` })
   anio?: number;
 
   @IsOptional()
@@ -60,4 +54,8 @@ export class UpdateEquipoDto {
   @IsString({ message: 'nSerie debe ser un texto' })
   @IsNotEmpty({ message: 'nSerie no puede estar vacío' })
   nSerie?: string;
+
+  @IsOptional()
+  @IsDateString( {}, { message: 'certificacion_vence_el debe ser una fecha válida en formato ISO (ej. YYYY-MM-DD) o null' })
+  certificacion_vence_el?: string | null;
 }

@@ -23,7 +23,14 @@ async function main() {
   await prisma.modulo.deleteMany({
     where: {
       codigo: {
-        in: ['maquinas', 'configuracion', 'vendedores', 'alquileres', 'avisos'],
+        in: [
+          'maquinas',
+          'configuracion',
+          'vendedores',
+          'alquileres',
+          'avisos',
+          'postulaciones',
+        ],
       },
     },
   });
@@ -57,6 +64,12 @@ async function main() {
     where: { codigo: 'AVISOS' },
     update: { nombre: 'Avisos' },
     create: { codigo: 'AVISOS', nombre: 'Avisos' },
+  });
+
+  const modPostulaciones = await prisma.modulo.upsert({
+    where: { codigo: 'POSTULACIONES' },
+    update: { nombre: 'Postulaciones' },
+    create: { codigo: 'POSTULACIONES', nombre: 'Postulaciones' },
   });
 
   // 4. Roles
@@ -133,10 +146,6 @@ async function main() {
   }
 
   // 6. Permisos para ALQUILERES (Issue Madre #75)
-  // superAdmin: pasa siempre por es_sistema: true
-  // administrador, logistica, taller: acceso sí, puede_editar: true
-  // servicio_tecnico: acceso sí, puede_editar: false
-  // personal: sin acceso (no se asocia fila en rolModulo)
   const permisosAlquileres = [
     { rolNombre: 'administrador', puede_editar: true },
     { rolNombre: 'logistica', puede_editar: true },
@@ -155,9 +164,6 @@ async function main() {
   }
 
   // 6.b Permisos para AVISOS (M-12 / Sub-issue #99)
-  // Lo ven los mismos roles que ven MAQUINAS;
-  // puede_editar: true para taller, servicio_tecnico, logistica y superiores (administrador).
-  // superAdmin pasa siempre por es_sistema: true.
   const permisosAvisos = [
     { rolNombre: 'administrador', puede_editar: true },
     { rolNombre: 'logistica', puede_editar: true },
@@ -171,6 +177,24 @@ async function main() {
       data: {
         rol_id: rolesMap[permiso.rolNombre].id,
         modulo_id: modAvisos.id,
+        puede_editar: permiso.puede_editar,
+      },
+    });
+  }
+
+  // 6.c Permisos para POSTULACIONES (M-13 / Sub-issue #111)
+  // Administrador y Logística: acceso total (puede_editar: true)
+  // Personal, Taller y Servicio Técnico: sin acceso (no se asocia fila en rolModulo)
+  const permisosPostulaciones = [
+    { rolNombre: 'administrador', puede_editar: true },
+    { rolNombre: 'logistica', puede_editar: true },
+  ];
+
+  for (const permiso of permisosPostulaciones) {
+    await prisma.rolModulo.create({
+      data: {
+        rol_id: rolesMap[permiso.rolNombre].id,
+        modulo_id: modPostulaciones.id,
         puede_editar: permiso.puede_editar,
       },
     });
@@ -478,6 +502,47 @@ async function main() {
         descripcion: null,
       },
     });
+  }
+
+  // =====================================================================
+  // 12. Seed de Vacantes de Ejemplo (M-13 / Sub-issue #111)
+  // =====================================================================
+  console.log('🌱 Poblando vacantes iniciales para el portal...');
+
+  const vacantesSeed = [
+    {
+      titulo: 'Mecánico de maquinaria pesada',
+      descripcion:
+        'Buscamos mecánico con experiencia en diagnóstico hidráulico, tren rodante, motores diésel de gran porte y ejecución de planes de mantenimiento preventivo y correctivo en taller y base operativa.',
+      requisitos:
+        '- Experiencia comprobable mínima de 3 años en reparación y mantenimiento de excavadoras, palas cargadoras y retroexcavadoras (marcas Caterpillar, Komatsu, Volvo).\n- Sólidos conocimientos en lectura de diagramas hidráulicos y eléctricos.\n- Diagnóstico con scanner y herramientas de servicio técnico de fábrica.\n- Residencia en Neuquén Capital, Plottier, Cipolletti o zonas aledañas.\n- Licencia de conducir vigente (categoría B o profesional deseable).',
+      activa: true,
+    },
+    {
+      titulo: 'Operador de minicargadora',
+      descripcion:
+        'Seleccionamos operador calificado para tareas de movimiento de suelo, carga y manipulación de aditamentos en obras viales, civiles y yacimientos.',
+      requisitos:
+        '- Mínimo 2 años de experiencia comprobable en operación de minicargadoras (Bobcat, Case, Caterpillar).\n- Manejo fluido de aditamentos hidráulicos: balde estándar, martillo demoledor y hoyadora.\n- Conocimientos en realización de checklists diarios y control de niveles de fluidos y horómetros.\n- Certificación o carnet de operador de maquinaria pesada vigente.\n- Disponibilidad horaria para turnos rotativos en obras de la región.',
+      activa: true,
+    },
+  ];
+
+  for (const v of vacantesSeed) {
+    const vacanteExistente = await prisma.vacante.findFirst({
+      where: { titulo: v.titulo },
+    });
+
+    if (vacanteExistente) {
+      await prisma.vacante.update({
+        where: { id: vacanteExistente.id },
+        data: v,
+      });
+    } else {
+      await prisma.vacante.create({
+        data: v,
+      });
+    }
   }
 
   await seedPlantillasChecklist(prisma);

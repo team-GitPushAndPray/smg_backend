@@ -1,23 +1,33 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AvisosService } from '../avisos/avisos.service.js';
 import { EstadoEquipo, FiltrosEquiposDto } from './dto/filtro-equipos.dto.js';
-import { EquipoListItemEntity, EquipoDetalleEntity, EquipoConRelacionesPrisma } from './entities/equipo.entity.js';
+import {
+  EquipoListItemEntity,
+  EquipoDetalleEntity,
+  EquipoConRelacionesPrisma,
+} from './entities/equipo.entity.js';
 import { HorometroHelper } from '../common/helpers/horometro.helper.js';
 import { CreateEquipoDto, UpdateEquipoDto } from './dto/index.js';
 
-
 @Injectable()
 export class EquiposService {
-
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly avisosService: AvisosService,
+  ) {}
 
   private readonly defaultInclude = {
     categoria: true,
     maquina: true,
     aditamento: true,
   } satisfies Prisma.EquipoInclude;
-
 
   // MÉTODOS PÚBLICOS (para catálogo)
   async findOneCatalogo(id: number) {
@@ -30,14 +40,17 @@ export class EquiposService {
       include: this.defaultInclude,
     });
 
-    if (!equipo) throw new NotFoundException(`El equipo con ID ${id} no fue encontrado o no está disponible`);
+    if (!equipo)
+      throw new NotFoundException(
+        `El equipo con ID ${id} no fue encontrado o no está disponible`,
+      );
 
     return equipo;
   }
 
   async findManyCatalogo(
-    extraWhere: Prisma.EquipoWhereInput = {}, 
-    orderBy: Prisma.EquipoOrderByWithRelationInput = { id: 'desc' } // <-- Orden original de tu catálogo
+    extraWhere: Prisma.EquipoWhereInput = {},
+    orderBy: Prisma.EquipoOrderByWithRelationInput = { id: 'desc' },
   ) {
     return this.prisma.equipo.findMany({
       where: {
@@ -53,7 +66,6 @@ export class EquiposService {
   // MÉTODOS PRIVADOS de lectura
 
   private buildWhereClause(filtros: FiltrosEquiposDto): Prisma.EquipoWhereInput {
-
     const { search, tipo, estado, categoriaId, activo = true } = filtros;
 
     const where: Prisma.EquipoWhereInput = { activo };
@@ -64,7 +76,7 @@ export class EquiposService {
     if (tipo === 'maquina') {
       where.maquina = { isNot: null };
     } else if (tipo === 'aditamento') {
-      where.aditamento = { isNot: null};
+      where.aditamento = { isNot: null };
     }
 
     if (search && search.trim() !== '') {
@@ -79,7 +91,6 @@ export class EquiposService {
 
     return where;
   }
-
 
   async findAllPrivado(filtros: FiltrosEquiposDto) {
     const page = filtros.page ?? 1;
@@ -100,15 +111,14 @@ export class EquiposService {
 
     return {
       data: equipos.map(
-        (eq) => new EquipoListItemEntity(eq as unknown as EquipoConRelacionesPrisma)
+        (eq) =>
+          new EquipoListItemEntity(eq as unknown as EquipoConRelacionesPrisma),
       ),
       meta: { total, page, limit },
     };
   }
 
-
   async findOnePrivado(id: number): Promise<EquipoDetalleEntity> {
-
     const equipo = await this.prisma.equipo.findUnique({
       where: { id },
       include: this.defaultInclude,
@@ -116,9 +126,10 @@ export class EquiposService {
 
     if (!equipo) throw new NotFoundException(`El equipo con ID ${id} no existe`);
 
-    return new EquipoDetalleEntity(equipo as unknown as EquipoConRelacionesPrisma);
+    return new EquipoDetalleEntity(
+      equipo as unknown as EquipoConRelacionesPrisma,
+    );
   }
-
 
   async findAllCategorias() {
     return this.prisma.categoria.findMany({
@@ -127,13 +138,12 @@ export class EquiposService {
     });
   }
 
+  // REGLAS DE DOMINIO PRIVADAS (SRP / DRY para Alta y Edición)
 
-  // 3. REGLAS DE DOMINIO PRIVADAS (SRP / DRY para Alta y Edición)
-
-  /** Verifica que el codigo_interno no exista (insensible a mayúsculas) */ 
+  /** Verifica que el codigo_interno no exista (insensible a mayúsculas) */
   private async validarCodigoInternoUnico(
     codigoInterno: string,
-    excludeId?:number,
+    excludeId?: number,
   ): Promise<void> {
     const existente = await this.prisma.equipo.findFirst({
       where: {
@@ -141,13 +151,15 @@ export class EquiposService {
           equals: codigoInterno,
           mode: 'insensitive',
         },
-        ...(excludeId !== undefined && { id: { not: excludeId }}),
+        ...(excludeId !== undefined && { id: { not: excludeId } }),
       },
     });
 
-    if (existente) throw new ConflictException(`Ya existe un equipo registrado con el código interno ${codigoInterno}`);
+    if (existente)
+      throw new ConflictException(
+        `Ya existe un equipo registrado con el código interno ${codigoInterno}`,
+      );
   }
-
 
   /** Verifica que la categoría exista en la base de datos. Sino, lanza 400 */
   private async validarCategoriaExiste(categoriaId: number): Promise<void> {
@@ -155,7 +167,8 @@ export class EquiposService {
       where: { id: categoriaId },
     });
 
-    if (!categoria) throw new BadRequestException(`La categoría con ID ${categoriaId} no existe`);
+    if (!categoria)
+      throw new BadRequestException(`La categoría con ID ${categoriaId} no existe`);
   }
 
   /** Impide que un aditamento reciba campos exclusivos de máquina */
@@ -164,12 +177,17 @@ export class EquiposService {
     anio?: number;
     nSerie?: string;
     horasMotorActual?: number;
-  }) : void {
+    certificacion_vence_el?: string | null;
+  }): void {
     const tieneCamposMaquina = Object.values(campos).some(
-      (valor) => valor !== undefined && valor !== null
+      (valor) => valor !== undefined,
     );
 
-    if (tieneCamposMaquina) throw new BadRequestException('Un aditamento no puede incluir campos exclusivos de máquina (modelo, anio, nSerie, horasMotorActual');
+    if (tieneCamposMaquina) {
+      throw new BadRequestException(
+        'Un aditamento no puede incluir campos exclusivos de máquina (modelo, anio, nSerie, horasMotorActual, certificacion_vence_el)',
+      );
+    }
   }
 
   // ALTA Y EDICIÓN DE EQUIPOS (POST Y PATCH)
@@ -177,7 +195,6 @@ export class EquiposService {
   /** POST /api/equipos
    * Crea atómicamente el registro en 'equipos' y en su subtipo ('maquinas' o 'aditamentos')
    */
-
   async create(dto: CreateEquipoDto): Promise<EquipoDetalleEntity> {
     if (dto.tipo === 'aditamento') {
       this.validarSinCamposDeMaquinaEnAditamento({
@@ -226,19 +243,26 @@ export class EquiposService {
     );
   }
 
-
   /**
    * PATCH /api/equipos/:id
    * Actualización parcial atómica de equipos y su subtipo
    */
-  async update(id: number, dto: UpdateEquipoDto): Promise<EquipoDetalleEntity> {
+  async update(
+    id: number,
+    dto: UpdateEquipoDto,
+    usuarioId: number,
+  ): Promise<EquipoDetalleEntity> {
     const equipoActual = await this.prisma.equipo.findUnique({
       where: { id },
       include: this.defaultInclude,
     });
 
-    if (!equipoActual) throw new NotFoundException(`El equipo con ID $id no existe`);
-    if (!equipoActual.activo) throw new ConflictException(`No se puede modificar el equipo con ID ${id} porque está dado de baja`);
+    if (!equipoActual)
+      throw new NotFoundException(`El equipo con ID ${id} no existe`);
+    if (!equipoActual.activo)
+      throw new ConflictException(
+        `No se puede modificar el equipo con ID ${id} porque está dado de baja`,
+      );
 
     const esMaquina = Boolean(equipoActual.maquina);
 
@@ -247,6 +271,7 @@ export class EquiposService {
         modelo: dto.modelo,
         anio: dto.anio,
         nSerie: dto.nSerie,
+        certificacion_vence_el: dto.certificacion_vence_el,
       });
     }
 
@@ -258,56 +283,107 @@ export class EquiposService {
       await this.validarCategoriaExiste(dto.categoriaId);
     }
 
-    const tieneCambiosEnMaquina = 
-      esMaquina && 
-      (dto.modelo !== undefined || 
-        dto.anio !== undefined || 
-        dto.nSerie !== undefined
-      );
+    const nuevaCertificacion =
+      dto.certificacion_vence_el !== undefined
+        ? dto.certificacion_vence_el
+          ? new Date(dto.certificacion_vence_el)
+          : null
+        : undefined;
 
-    const equipoActualizado = await this.prisma.equipo.update({
-      where: { id },
-      data: {
-        ...(dto.codigoInterno !== undefined && {
-          codigo_interno: dto.codigoInterno,
-        }),
-        ...(dto.categoriaId !== undefined && {
-          id_categoria: dto.categoriaId,
-        }),
-        ...(dto.marca !== undefined && { marca: dto.marca }),
-        ...(dto.ubicacion !== undefined && { ubicacion: dto.ubicacion }),
-        ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
-        ...(tieneCambiosEnMaquina && {
-          maquina: {
-            update: {
-              ...(dto.modelo !== undefined && { modelo: dto.modelo }),
-              ...(dto.anio !== undefined && { anio: dto.anio }),
-              ...(dto.nSerie !== undefined && { n_serie: dto.nSerie }),
+    const fechaAnteriorStr = equipoActual.maquina?.certificacion_vence_el
+      ? equipoActual.maquina.certificacion_vence_el.toISOString().slice(0, 10)
+      : null;
+
+    const fechaNuevaStr =
+      nuevaCertificacion !== undefined
+        ? nuevaCertificacion
+          ? nuevaCertificacion.toISOString().slice(0, 10)
+          : null
+        : fechaAnteriorStr;
+
+    const cambioCertificacion =
+      esMaquina &&
+      nuevaCertificacion !== undefined &&
+      fechaAnteriorStr !== fechaNuevaStr;
+
+    const tieneCambiosEnMaquina =
+      esMaquina &&
+      (dto.modelo !== undefined ||
+        dto.anio !== undefined ||
+        dto.nSerie !== undefined ||
+        nuevaCertificacion !== undefined);
+
+    const equipoActualizado = await this.prisma.$transaction(async (tx) => {
+      const actualizado = await tx.equipo.update({
+        where: { id },
+        data: {
+          ...(dto.codigoInterno !== undefined && {
+            codigo_interno: dto.codigoInterno,
+          }),
+          ...(dto.categoriaId !== undefined && {
+            id_categoria: dto.categoriaId,
+          }),
+          ...(dto.marca !== undefined && { marca: dto.marca }),
+          ...(dto.ubicacion !== undefined && { ubicacion: dto.ubicacion }),
+          ...(dto.descripcion !== undefined && {
+            descripcion: dto.descripcion,
+          }),
+          ...(tieneCambiosEnMaquina && {
+            maquina: {
+              update: {
+                ...(dto.modelo !== undefined && { modelo: dto.modelo }),
+                ...(dto.anio !== undefined && { anio: dto.anio }),
+                ...(dto.nSerie !== undefined && { n_serie: dto.nSerie }),
+                ...(nuevaCertificacion !== undefined && {
+                  certificacion_vence_el: nuevaCertificacion,
+                }),
+              },
             },
-          },
-        }),
-      },
-      include: this.defaultInclude,
-    }); 
+          }),
+        },
+        include: this.defaultInclude,
+      });
 
-    return new EquipoDetalleEntity( equipoActualizado as unknown as EquipoConRelacionesPrisma);
+      if (cambioCertificacion) {
+        await this.avisosService.procesarCambioCertificacion(
+          id,
+          usuarioId,
+          tx,
+        );
+      }
+
+      return actualizado;
+    });
+
+    return new EquipoDetalleEntity(
+      equipoActualizado as unknown as EquipoConRelacionesPrisma,
+    );
   }
 
-
-  // Actualiza el horómetro del equipo. Solo aplicable a máquinas
-  async actualizarHoras(id: number, nuevasHoras: number): Promise<EquipoDetalleEntity> {
+  // Actualiza el horómetro del equipo y evalúa avisos preventivos
+  async actualizarHoras(
+    id: number,
+    nuevasHoras: number,
+  ): Promise<EquipoDetalleEntity> {
     const equipo = await this.obtenerEquipoActivoOrThrow(id);
 
     const esMaquina = Boolean(equipo.maquina);
     if (!esMaquina) {
-      throw new BadRequestException('No se pueden registrar horas de motor en un aditamento');
+      throw new BadRequestException(
+        'No se pueden registrar horas de motor en un aditamento',
+      );
     }
 
     const horasActuales = equipo.maquina?.horas_motor_actual ?? 0;
 
     HorometroHelper.validarNuevasHoras(nuevasHoras, horasActuales);
 
-    await HorometroHelper.actualizarHorasConcurrenciaSegura(this.prisma, id, nuevasHoras);
+    await HorometroHelper.actualizarHorasConcurrenciaSegura(
+      this.prisma,
+      id,
+      nuevasHoras,
+    );
+    await this.avisosService.evaluarMaquina(id);
 
     return this.findOnePrivado(id);
   }
@@ -315,14 +391,17 @@ export class EquiposService {
   /**
    * Cambia el estado del equipo. Validado por DTO en el controlador
    */
-  async cambiarEstado(id: number, nuevoEstado: EstadoEquipo): Promise<EquipoDetalleEntity> {
+  async cambiarEstado(
+    id: number,
+    nuevoEstado: EstadoEquipo,
+  ): Promise<EquipoDetalleEntity> {
     const equipo = await this.obtenerEquipoActivoOrThrow(id);
 
     this.validarTransicionEstado(equipo.estado, nuevoEstado);
 
     await this.prisma.equipo.update({
       where: { id },
-      data: { estado: nuevoEstado as any},
+      data: { estado: nuevoEstado as any },
     });
 
     return this.findOnePrivado(id);
@@ -333,13 +412,12 @@ export class EquiposService {
    */
   async darDeBaja(id: number): Promise<void> {
     await this.obtenerEquipoActivoOrThrow(id);
-    
+
     await this.prisma.equipo.update({
       where: { id },
       data: { activo: false },
     });
   }
-
 
   /**
    * Centraliza la invariante de que un equipo debe existir y estar activo para recibir cualquier operación que no sea de mera lectura
@@ -350,17 +428,23 @@ export class EquiposService {
       include: this.defaultInclude,
     });
 
-    if (!equipo) throw new NotFoundException(`El equipo con ID ${id} no fue encontrado`);
-    
-    if (!equipo.activo) throw new ConflictException(`El equipo con ID ${id} está dado de baja y no admite modificaciones`);
+    if (!equipo)
+      throw new NotFoundException(`El equipo con ID ${id} no fue encontrado`);
+
+    if (!equipo.activo)
+      throw new ConflictException(
+        `El equipo con ID ${id} está dado de baja y no admite modificaciones`,
+      );
 
     return equipo;
   }
 
-  private validarTransicionEstado(estadoActual: string, nuevoEstado: string): void {
+  private validarTransicionEstado(
+    estadoActual: string,
+    nuevoEstado: string,
+  ): void {
     // TODO: Implementar reglas de transición cuando existan los módulos de Alquiler y Taller.
     // Por ahora se permiten todas las transiciones.
     return;
   }
-
 }

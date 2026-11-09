@@ -103,6 +103,20 @@ Contiene la configuración de Prisma ORM, actuando como la fuente de la verdad p
 - **`schema.prisma`**: Archivo central donde se modelan las tablas, las relaciones y se autogeneran los tipos estrictos de TypeScript.
 - **`seed.ts`**: Script de inicialización encargado de poblar la base de datos de forma predecible con configuraciones del sistema (módulos, roles, superadmin) y datos de prueba.
 
+### `src/alquileres/` Gestión de Alquileres
+
+Administra el ciclo de vida de los contratos de alquiler de maquinarias y aditamentos, controlando reservas, entregas, devoluciones, estados y cancelaciones.
+
+- **`dto/`**: Contiene los objetos de transferencia de datos con validaciones estrictas y sanitización para las operaciones de alquiler:
+  - **`anular-alquiler.dto.ts`**: Valida los datos requeridos para anular un alquiler, exigiendo el motivo de cancelación.
+  - **`create-alquileres.dto.ts`**: Valida los datos de alta de un contrato de alquiler (cliente, equipos asignados, fechas estimadas de inicio/fin y condiciones comerciales).
+  - **`get-alquileres-query.dto.ts`**: Valida y transforma los parámetros de consulta opcionales para paginación y filtros (por estado, cliente, equipo o rango de fechas).
+  - **`update-alquiler.dto.ts`**: Define y valida los campos permitidos para la edición parcial o actualización del estado de un alquiler en curso.
+  - **`index.ts`**: Archivo de barril (barrel export) que centraliza y reexporta todos los DTOs del módulo para simplificar sus importaciones.
+- **`alquileres.controller.ts`**: Expone los endpoints REST para la consulta, creación, modificación y anulación de alquileres, protegiendo las rutas con validación de roles y permisos.
+- **`alquileres.module.ts`**: Configura y encapsula el módulo en NestJS, registrando controladores, servicios y exportando dependencias para otros módulos del sistema.
+- **`alquileres.service.ts`**: Contiene la lógica de negocio central de alquileres: transacciones de base de datos, validación de disponibilidad de equipos, cálculo de períodos y transiciones de estados.
+
 - ### `src/auth/` Capa de Autenticación y Autorización (RBAC)
 
 Gestiona la seguridad de la API, el inicio de sesión y el Control de Acceso Basado en Roles. Está subdividida según patrones de diseño estrictos:
@@ -135,6 +149,21 @@ Gestiona la seguridad de la API, el inicio de sesión y el Control de Acceso Bas
   - `jwt.strategy.ts`: Es el motor detrás del `jwt-auth.guard`. Extrae el token de la cabecera (Bearer), lo decodifica y devuelve los datos del usuario para inyectarlos en la petición.
 
 > **Nota de arquitectura:** La implementación de Guards y Decoradores sigue el principio de **Responsabilidad Única (SRP)** y **Programación Orientada a Aspectos**. Los controladores no contienen lógica de seguridad ni de permisos ("If user.rol === X"); simplemente declaran qué permisos requieren a través del decorador, y los Guards resuelven el acceso de forma agnóstica.
+
+### `src/avisos/` Mantenimiento Preventivo y Avisos
+
+Gestiona el motor de alertas preventivas para maquinaria pesada por acumulación de horómetro y vencimiento de certificaciones técnicas, coordinando la evaluación automática, la campanita de notificaciones, los escalones de servicio y el cierre en cascada.
+
+- **`dto/`**: Define los contratos de entrada y validaciones para la consulta, gestión y configuración del mantenimiento:
+  - **`atender-aviso.dto.ts`**: Valida los datos requeridos para registrar la atención de una alerta, exigiendo una nota técnica obligatoria.
+  - **`filtro-avisos.dto.ts`**: Valida y parsea los query params opcionales para filtrar avisos por estado (`PENDIENTE`, `ATENDIDO`) y tipo (`SERVICIO`, `CERTIFICACION`).
+  - **`update-escalon-servicio.dto.ts`**: Valida la actualización exclusiva de la descripción de un tipo de service, garantizando la inmutabilidad de su nombre y horas de intervalo fijas.
+- **`entities/`**: Mapeo y serialización de salida hacia el cliente:
+  - **`aviso.entity.ts`**: Modela el contrato de respuesta de la API, calculando en tiempo de ejecución las horas restantes para services y días restantes para certificaciones, junto a las relaciones con equipo, escalón y usuario auditor.
+- **`avisos.controller.ts`**: Expone los endpoints protegidos para el listado ordenado por criticidad, métricas de resumen para la campanita, atención de alertas y la ejecución desatendida del cron job asegurada con secreto.
+- **`escalones-servicio.controller.ts`**: Expone las rutas de consulta y actualización de los tres tipos fijos de service preventivo del sistema, bajo control de permisos de maquinaria.
+- **`avisos.module.ts`**: Registra controladores y proveedores de mantenimiento preventivo, integrando Prisma y exportando el servicio para interoperar con Checklists y Equipos.
+- **`avisos.service.ts`**: Núcleo de la lógica preventiva: evaluación idempotente por horómetro y calendario, atención técnica con cierre en cascada de servicios anteriores, recálculo ante renovación de certificaciones y consultas transaccionales.
 
 - ### `src/catalogo/` Capa de Catálogo Público
 
@@ -182,6 +211,18 @@ Módulo de negocio central que administra el ciclo de vida de los checklists ope
 
 - **`checklists.module.ts` (Módulo del Dominio)**
   - Integra y encapsula los controladores y servicios de checklists, importando `PrismaModule` para persistencia e `ImagesModule` para el soporte multimedia.
+
+### `src/clientes/` Gestión de Clientes
+
+Administra el registro y seguimiento comercial de las empresas y personas que contratan maquinaria o servicios, centralizando sus datos de contacto, razones sociales, identificación tributaria y estado crediticio/operativo.
+
+- **`dto/`**: Define los esquemas de validación y sanitización para las operaciones sobre clientes:
+  - **`create-cliente.dto.ts`**: Valida los datos requeridos para dar de alta un nuevo cliente (razón social o nombre, CUIT/identificación fiscal, correo, teléfono y dirección).
+  - **`get-clientes-query.dto.ts`**: Valida los parámetros de consulta opcionales para la búsqueda por texto, filtrado por estado y paginación en el listado.
+  - **`update-cliente.dto.ts`**: Define y valida los campos admitidos para la modificación parcial de los datos comerciales y de contacto de un cliente existente.
+- **`clientes.controller.ts`**: Expone las rutas REST para listar, consultar en detalle, registrar, editar o dar de baja lógica a los clientes, resguardando el acceso mediante validación de roles y permisos.
+- **`clientes.module.ts`**: Empaqueta el módulo en NestJS, registrando controladores, servicios y proveyendo la dependencia a otros módulos que requieran asociar clientes (como Alquileres).
+- **`clientes.service.ts`**: Implementa la lógica de negocio y persistencia en base de datos: validación de duplicados (por CUIT o correo), consultas paginadas, integridad referencial con contratos y bajas lógicas.
 
 ### `src/common/` Capa de Utilidades Compartidas (Cross-Cutting Concerns)
 

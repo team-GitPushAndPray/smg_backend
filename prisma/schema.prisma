@@ -44,7 +44,7 @@ model RolModulo {
 }
 
 model Usuario {
-  id               Int    @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   rol_id           Int       
   nombre           String
   apellido         String
@@ -60,7 +60,8 @@ model Usuario {
 
   rol              Rol       @relation(fields: [rol_id], references: [id])
 
-  alquileres Alquiler[]
+  alquileres       Alquiler[]
+  avisos_atendidos Aviso[]
 
   @@map("usuarios") 
 }
@@ -75,35 +76,37 @@ model Categoria {
 }
 
 model Equipo {
-  id             Int         @id @default(autoincrement())
-  codigo_interno String      @unique
-  qr_token       String      @unique @default(uuid()) @db.Uuid
+  id             Int              @id @default(autoincrement())
+  codigo_interno String           @unique
+  qr_token       String           @unique @default(uuid()) @db.Uuid
   marca          String?
-  estado         EstadoEquipo   @default(disponible) 
+  estado         EstadoEquipo     @default(disponible) 
   ubicacion      String?
   descripcion    String?
-  activo         Boolean     @default(true)
+  activo         Boolean          @default(true)
   
   id_categoria   Int
-  categoria      Categoria   @relation(fields: [id_categoria], references: [id])
+  categoria      Categoria        @relation(fields: [id_categoria], references: [id])
 
   maquina        Maquina?
   aditamento     Aditamento?
-  checklist       Checklist[]
-  alquileres AlquilerEquipo[]
+  checklist      Checklist[]
+  alquileres     AlquilerEquipo[]
 
   @@map("equipos")
 }
 
 model Maquina {
-  equipo_id          Int    @id
-  modelo             String
-  anio               Int
-  n_serie            String
-  horas_motor_actual Int
-  horas_actualizadas_en DateTime? @db.Timestamp()  
+  equipo_id              Int       @id
+  modelo                 String
+  anio                   Int
+  n_serie                String
+  horas_motor_actual     Int
+  horas_actualizadas_en  DateTime? @db.Timestamp()
+  certificacion_vence_el DateTime? @db.Date
   
-  equipo             Equipo @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
+  equipo                 Equipo    @relation(fields: [equipo_id], references: [id], onDelete: Cascade)
+  avisos                 Aviso[]
 
   @@map("maquinas")
 }
@@ -135,7 +138,6 @@ model Vendedor {
 
   @@map("vendedores")
 }
-
 
 enum TipoPlantilla {
   DIARIO
@@ -175,6 +177,15 @@ enum AplicaA {
   ADITAMENTO
 }
 
+enum TipoAviso {
+  SERVICIO
+  CERTIFICACION
+}
+
+enum EstadoAviso {
+  PENDIENTE
+  ATENDIDO
+}
 
 model PlantillaChecklist {
   id       Int             @id @default(autoincrement())
@@ -189,7 +200,6 @@ model PlantillaChecklist {
   @@map("plantilla_checklist")
 }
 
-
 model PlantillaItem {
   id           Int                  @id @default(autoincrement())
   plantilla_id Int
@@ -203,7 +213,6 @@ model PlantillaItem {
   @@unique([plantilla_id, orden])
   @@map("plantilla_item")
 }
-
 
 model Checklist {
   id                   Int                  @id @default(autoincrement())
@@ -220,12 +229,11 @@ model Checklist {
   respuestas           ChecklistRespuesta[]
   fotos                ChecklistFoto[]   
 
-  alquiler_entrega    AlquilerEquipo? @relation("ChecklistEntrega")
-  alquiler_devolucion AlquilerEquipo? @relation("ChecklistDevolucion")   
+  alquiler_entrega     AlquilerEquipo?      @relation("ChecklistEntrega")
+  alquiler_devolucion  AlquilerEquipo?      @relation("ChecklistDevolucion")   
 
   @@map("checklist")
 }
-
 
 model ChecklistRespuesta {
   id                Int           @id @default(autoincrement())
@@ -241,7 +249,6 @@ model ChecklistRespuesta {
   @@map("checklist_respuesta")
 }
 
-
 model ChecklistFoto {
   id           Int       @id @default(autoincrement())
   checklist_id Int
@@ -252,64 +259,95 @@ model ChecklistFoto {
   @@map("checklist_foto")
 }
 
-
 model Cliente {
-  id              Int      @id @default(autoincrement())
+  id              Int        @id @default(autoincrement())
   razon_social    String
-  cuit            String?  @unique
+  cuit            String?    @unique
   contacto_nombre String?
   telefono        String?
   email           String?
   direccion       String?
   localidad       String?
   observaciones   String?
-  activo          Boolean  @default(true)
-  creado_en       DateTime @default(now())
-  actualizado_en  DateTime @updatedAt
+  activo          Boolean    @default(true)
+  creado_en       DateTime   @default(now())
+  actualizado_en  DateTime   @updatedAt
 
-  alquileres Alquiler[]
+  alquileres      Alquiler[]
 
   @@map("clientes")
 }
 
-
 model Alquiler {
-  id                     Int            @id @default(autoincrement())
+  id                     Int              @id @default(autoincrement())
   cliente_id             Int
   usuario_id             Int
-  estado                 EstadoAlquiler @default(PENDIENTE)
-  fecha_inicio           DateTime       @db.Date
-  fecha_fin_prevista     DateTime       @db.Date
-  latitud                Decimal        @db.Decimal(9, 6)
-  longitud               Decimal        @db.Decimal(9, 6)
+  estado                 EstadoAlquiler   @default(PENDIENTE)
+  fecha_inicio           DateTime         @db.Date
+  fecha_fin_prevista     DateTime         @db.Date
+  latitud                Decimal          @db.Decimal(9, 6)
+  longitud               Decimal          @db.Decimal(9, 6)
   ubicacion_referencia   String
   contacto_obra_nombre   String?
   contacto_obra_telefono String?
   observaciones          String?
   motivo_anulacion       String?
-  creado_en              DateTime       @default(now())
-  actualizado_en         DateTime       @updatedAt
+  creado_en              DateTime         @default(now())
+  actualizado_en         DateTime         @updatedAt
 
-  cliente Cliente          @relation(fields: [cliente_id], references: [id], onDelete: Restrict)
-  usuario Usuario          @relation(fields: [usuario_id], references: [id], onDelete: Restrict)
-  equipos AlquilerEquipo[]
+  cliente                Cliente          @relation(fields: [cliente_id], references: [id], onDelete: Restrict)
+  usuario                Usuario          @relation(fields: [usuario_id], references: [id], onDelete: Restrict)
+  equipos                AlquilerEquipo[]
 
   @@map("alquileres")
 }
 
-
 model AlquilerEquipo {
-  id                      Int  @id @default(autoincrement())
+  id                      Int        @id @default(autoincrement())
   alquiler_id             Int
   equipo_id               Int
-  checklist_entrega_id    Int? @unique
-  checklist_devolucion_id Int? @unique
+  checklist_entrega_id    Int?       @unique
+  checklist_devolucion_id Int?       @unique
 
-  alquiler             Alquiler   @relation(fields: [alquiler_id], references: [id], onDelete: Restrict)
-  equipo               Equipo     @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
-  checklist_entrega    Checklist? @relation("ChecklistEntrega", fields: [checklist_entrega_id], references: [id], onDelete: Restrict)
-  checklist_devolucion Checklist? @relation("ChecklistDevolucion", fields: [checklist_devolucion_id], references: [id], onDelete: Restrict)
+  alquiler                Alquiler   @relation(fields: [alquiler_id], references: [id], onDelete: Restrict)
+  equipo                  Equipo     @relation(fields: [equipo_id], references: [id], onDelete: Restrict)
+  checklist_entrega       Checklist? @relation("ChecklistEntrega", fields: [checklist_entrega_id], references: [id], onDelete: Restrict)
+  checklist_devolucion    Checklist? @relation("ChecklistDevolucion", fields: [checklist_devolucion_id], references: [id], onDelete: Restrict)
 
   @@unique([alquiler_id, equipo_id])
   @@map("alquiler_equipo")
+}
+
+model EscalonServicio {
+  id              Int     @id @default(autoincrement())
+  horas_intervalo Int     @unique
+  nombre          String  @db.Text
+  descripcion     String? @db.Text
+
+  avisos          Aviso[]
+
+  @@map("escalon_servicio")
+}
+
+model Aviso {
+  id              Int              @id @default(autoincrement())
+  maquina_id      Int
+  tipo            TipoAviso
+  hito_horas      Int?
+  escalon_id      Int?
+  vence_el        DateTime?        @db.Date
+  estado          EstadoAviso      @default(PENDIENTE)
+  nota_atencion   String?          @db.Text
+  atendido_por_id Int?
+  atendido_en     DateTime?
+  notificado_en   DateTime?
+  creado_en       DateTime         @default(now())
+
+  maquina         Maquina          @relation(fields: [maquina_id], references: [equipo_id], onDelete: Restrict)
+  escalon         EscalonServicio? @relation(fields: [escalon_id], references: [id], onDelete: Restrict)
+  atendido_por    Usuario?         @relation(fields: [atendido_por_id], references: [id], onDelete: Restrict)
+
+  @@unique([maquina_id, tipo, hito_horas])
+  @@unique([maquina_id, tipo, vence_el])
+  @@map("aviso")
 }

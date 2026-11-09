@@ -23,7 +23,7 @@ async function main() {
   await prisma.modulo.deleteMany({
     where: {
       codigo: {
-        in: ['maquinas', 'configuracion', 'vendedores', 'alquileres'],
+        in: ['maquinas', 'configuracion', 'vendedores', 'alquileres', 'avisos'],
       },
     },
   });
@@ -51,6 +51,12 @@ async function main() {
     where: { codigo: 'ALQUILERES' },
     update: { nombre: 'Alquileres' },
     create: { codigo: 'ALQUILERES', nombre: 'Alquileres' },
+  });
+
+  const modAvisos = await prisma.modulo.upsert({
+    where: { codigo: 'AVISOS' },
+    update: { nombre: 'Avisos' },
+    create: { codigo: 'AVISOS', nombre: 'Avisos' },
   });
 
   // 4. Roles
@@ -143,6 +149,28 @@ async function main() {
       data: {
         rol_id: rolesMap[permiso.rolNombre].id,
         modulo_id: modAlquileres.id,
+        puede_editar: permiso.puede_editar,
+      },
+    });
+  }
+
+  // 6.b Permisos para AVISOS (M-12 / Sub-issue #99)
+  // Lo ven los mismos roles que ven MAQUINAS;
+  // puede_editar: true para taller, servicio_tecnico, logistica y superiores (administrador).
+  // superAdmin pasa siempre por es_sistema: true.
+  const permisosAvisos = [
+    { rolNombre: 'administrador', puede_editar: true },
+    { rolNombre: 'logistica', puede_editar: true },
+    { rolNombre: 'servicio_tecnico', puede_editar: true },
+    { rolNombre: 'taller', puede_editar: true },
+    { rolNombre: 'personal', puede_editar: false },
+  ];
+
+  for (const permiso of permisosAvisos) {
+    await prisma.rolModulo.create({
+      data: {
+        rol_id: rolesMap[permiso.rolNombre].id,
+        modulo_id: modAvisos.id,
         puede_editar: permiso.puede_editar,
       },
     });
@@ -426,6 +454,29 @@ async function main() {
       where: { cuit: c.cuit },
       update: c,
       create: c,
+    });
+  }
+
+  // =====================================================================
+  // 11. Seed de Escalones de Servicio (M-12 / Sub-issue #99)
+  // =====================================================================
+  console.log('🌱 Poblando escalones de servicio...');
+
+  const escalonesSeed = [
+    { horas_intervalo: 250, nombre: 'Service 250 hs' },
+    { horas_intervalo: 500, nombre: 'Service 500 hs' },
+    { horas_intervalo: 1000, nombre: 'Service 1000 hs' },
+  ];
+
+  for (const escalon of escalonesSeed) {
+    await prisma.escalonServicio.upsert({
+      where: { horas_intervalo: escalon.horas_intervalo },
+      update: { nombre: escalon.nombre },
+      create: {
+        horas_intervalo: escalon.horas_intervalo,
+        nombre: escalon.nombre,
+        descripcion: null,
+      },
     });
   }
 

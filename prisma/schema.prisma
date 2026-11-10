@@ -351,3 +351,43 @@ model Aviso {
   @@unique([maquina_id, tipo, vence_el])
   @@map("aviso")
 }
+
+
+enum EstadoPostulacion {
+  NUEVO
+  EN_REVISION
+  CONTACTADO
+  DESCARTADO
+}
+
+model Vacante {
+  id             Int           @id @default(autoincrement())
+  titulo         String
+  descripcion    String
+  requisitos     String
+  activa         Boolean       @default(true)
+  creado_en      DateTime      @default(now())
+  actualizado_en DateTime      @updatedAt
+  postulaciones  Postulacion[]
+
+  @@map("vacantes")
+}
+
+model Postulacion {
+  id                 Int               @id @default(autoincrement())
+  vacante_id         Int
+  nombre             String
+  apellido           String
+  email              String
+  telefono           String
+  mensaje            String?
+  cv_url             String
+  cv_nombre_original String
+  estado             EstadoPostulacion @default(NUEVO)
+  creado_en          DateTime          @default(now())
+  actualizado_en     DateTime          @updatedAt
+
+  vacante            Vacante           @relation(fields: [vacante_id], references: [id])
+
+  @@map("postulaciones")
+}

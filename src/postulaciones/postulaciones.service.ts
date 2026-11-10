@@ -1,14 +1,13 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { EstadoPostulacion, Prisma } from '@prisma/client';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-import { CreatePostulacionDto } from './dto/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { PostulacionPublicaEntity } from './entities/postulacion.entity.js';
-import { EstadoPostulacion } from '@prisma/client';
+import { CreatePostulacionDto, FilterPostulacionesDto, UpdateEstadoPostulacionDto } from './dto/index.js';
+import { PostulacionAdminEntity, PostulacionPublicaEntity } from './entities/postulacion.entity.js';
 import { validarArchivoPdf } from './validators/pdf-file.validator.js';
 
 @Injectable()
 export class PostulacionesService {
-
   constructor(private readonly prisma: PrismaService) {
     if (process.env.CLOUDINARY_CLOUD_NAME) {
       cloudinary.config({
@@ -19,16 +18,15 @@ export class PostulacionesService {
     }
   }
 
-
+  
   /**
    * POST /api/postulaciones
-   * Recibe una postulación pública, evalúia el honeypot, valida el PDF y la vacante, sube el CV a Cloudinary y guarda el registro con estado NUEVO
+   * Recibe una postulación pública, evalúa el honeypot, valida el PDF y la vacante, sube el CV a Cloudinary y guarda el registro con estado NUEVO
    */
   async createPublica(
     dto: CreatePostulacionDto,
     file?: Express.Multer.File,
   ): Promise<PostulacionPublicaEntity> {
-
     if (dto.website && dto.website.length > 0) {
       return new PostulacionPublicaEntity({
         id: Math.floor(Math.random() * 9000) + 1000,
@@ -51,7 +49,11 @@ export class PostulacionesService {
       select: { id: true, activa: true },
     });
 
-    if (!vacante || !vacante.activa) throw new BadRequestException('La vacante seleccionada no existe o no se encuentra activa');
+    if (!vacante || !vacante.activa) {
+      throw new BadRequestException(
+        'La vacante seleccionada no existe o no se encuentra activa',
+      );
+    }
 
     const uploadResult = await this.subirPdfACloudinary(file.buffer);
     const nombreOriginalLimpio = file.originalname.trim();
@@ -67,17 +69,106 @@ export class PostulacionesService {
         cv_url: uploadResult.secure_url,
         cv_nombre_original: nombreOriginalLimpio,
         estado: EstadoPostulacion.NUEVO,
-      }
-    })
+      },
+    });
 
     return new PostulacionPublicaEntity(nuevaPostulacion);
   }
 
 
   /**
+   * GET /api/postulaciones
+   * Lista las postulaciones con filtros opcionales (vacante_id, estado),
+   * ordenadas de la más nueva a la más vieja e incluyendo el título de la vacante.
+   */
+  async findAll(
+    filters: FilterPostulacionesDto,
+  ): Promise<PostulacionAdminEntity[]> {
+    const where: Prisma.PostulacionWhereInput = {};
+
+    if (filters.vacante_id !== undefined) {
+      where.vacante_id = filters.vacante_id;
+    }
+
+    if (filters.estado !== undefined) {
+      where.estado = filters.estado;
+    }
+
+    const postulaciones = await this.prisma.postulacion.findMany({
+      where,
+      orderBy: { creado_en: 'desc' },
+      include: {
+        vacante: {
+          select: {
+            id: true,
+            titulo: true,
+            activa: true,
+          },
+        },
+      },
+    });
+
+    return postulaciones.map((item) => new PostulacionAdminEntity(item));
+  }
+
+  /**
+   * GET /api/postulaciones/:id
+   * Obtiene la ficha completa de una postulación (incluyendo cv_url y cv_nombre_original)
+   */
+  async findOne(id: number): Promise<PostulacionAdminEntity> {
+    const postulacion = await this.prisma.postulacion.findUnique({
+      where: { id },
+      include: {
+        vacante: {
+          select: {
+            id: true,
+            titulo: true,
+            activa: true,
+          },
+        },
+      },
+    });
+
+    if (!postulacion) {
+      throw new NotFoundException(`La postulación con ID ${id} no existe`);
+    }
+
+    return new PostulacionAdminEntity(postulacion);
+  }
+
+  /**
+   * PATCH /api/postulaciones/:id/estado
+   * Actualiza únicamente el estado de una postulación existente
+   */
+  async updateEstado(
+    id: number,
+    dto: UpdateEstadoPostulacionDto,
+  ): Promise<PostulacionAdminEntity> {
+    await this.findOne(id);
+
+    const actualizada = await this.prisma.postulacion.update({
+      where: { id },
+      data: {
+        estado: dto.estado,
+      },
+      include: {
+        vacante: {
+          select: {
+            id: true,
+            titulo: true,
+            activa: true,
+          },
+        },
+      },
+    });
+
+    return new PostulacionAdminEntity(actualizada);
+  }
+
+  /**
    * Sube el buffer del PDF a Cloudinary
    */
-private subirPdfACloudinary(buffer: Buffer): Promise<UploadApiResponse> {
+  private subirPdfACloudinary(buffer: Buffer): Promise<UploadApiResponse> {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -92,10 +183,9 @@ private subirPdfACloudinary(buffer: Buffer): Promise<UploadApiResponse> {
         },
         (error, result) => {
           if (error || !result) {
-            const detalle = error?.message || JSON.stringify(error) || 'Respuesta vacía de Cloudinary';
             return reject(
               new InternalServerErrorException(
-                `Error Cloudinary: ${detalle}`,
+                'No se pudo almacenar el archivo CV en el servidor de archivos',
               ),
             );
           }
@@ -106,5 +196,4 @@ private subirPdfACloudinary(buffer: Buffer): Promise<UploadApiResponse> {
       uploadStream.end(buffer);
     });
   }
-
 }

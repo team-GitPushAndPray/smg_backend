@@ -18,6 +18,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ClientesModule } from './clientes/clientes.module.js';
 import { AlquileresModule } from './alquileres/alquileres.module.js';
 import { AvisosModule } from './avisos/avisos.module.js';
+import { VacantesModule } from './vacantes/vacantes.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -38,6 +39,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ClientesModule,
     AlquileresModule,
     AvisosModule,
+    VacantesModule,
   ],
   controllers: [AppController],
   providers: [PrismaService,

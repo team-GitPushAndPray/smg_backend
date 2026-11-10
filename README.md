@@ -281,6 +281,26 @@ Administra las entidades que representan las distintas secciones o dominios de l
 - **`entities/` (Sanitización y Serialización)**
   - `modulo.entity.ts`: Clase que mapea el resultado de la base de datos antes de enviarlo por la red. Se encarga de transformar y sanitizar los datos (por ejemplo, garantizando que códigos internos viajen en un formato predecible como MAYÚSCULAS) para evitar inconsistencias visuales o lógicas en el frontend.
 
+### `src/postulaciones/` Capa de Gestión y Recepción de Postulaciones (M-13)
+
+Gestiona el ciclo de vida completo de las postulaciones laborales asociadas a vacantes activas. Implementa un canal híbrido que combina la recepción pública de candidatos sin autenticación previa con un panel administrativo interno protegido por control de acceso basado en módulos (RBAC), contemplando subida segura de archivos en memoria, validación binaria e integración con almacenamiento externo en la nube.
+
+- **`postulaciones.controller.ts`**: Expone tanto el endpoint público para la recepción de postulaciones (`POST /api/postulaciones` con `@Public()`), procesando cargas `multipart/form-data` mediante interceptores de Multer en memoria, como las rutas operativas del panel administrativo (`GET /api/postulaciones`, `GET /api/postulaciones/:id` y `PATCH /api/postulaciones/:id/estado`) protegidas bajo la metadata `@Modulo('POSTULACIONES')` y requerimiento de edición (`editar: true`).
+- **`postulaciones.service.ts`**: Orquesta la lógica de negocio del módulo: intercepta envíos automatizados vía técnica honeypot, verifica la vigencia de la vacante (`activa: true`), delega la subida por stream del PDF a Cloudinary, persiste los registros en PostgreSQL mediante Prisma aplicando orden cronológico descendente y gestiona las transiciones de estado (`NUEVO`, `EN_REVISION`, `ENTREVISTA`, `FINALISTA`, `DESCARTADO`).
+- **`postulaciones.module.ts`**: Encapsula y declara los controladores, servicios y dependencias requeridas (incluyendo la inyección de `PrismaService`), integrando el dominio de postulaciones de forma limpia en el `AppModule`.
+
+- **`dto/` (Validación y Transformación de Entrada)**
+  - `create-postulacion.dto.ts`: Valida los datos del formulario público del candidato (saneamiento de cadenas con `trim`, tipado entero positivo para `vacante_id`, normalización y casing de email, longitudes máximas y campo trampa anti-spam `website`).
+  - `filter-postulaciones.dto.ts`: Gestiona y sanitiza los parámetros opcionales de búsqueda (`vacante_id` numérico y `estado` validado contra el enum de Prisma) para las consultas de la bandeja de postulantes.
+  - `update-estado-postulacion.dto.ts`: Valida y normaliza en mayúsculas la mutación del estado de una postulación desde el panel administrativo, rechazando estados inexistentes con `400 Bad Request`.
+  - `index.ts`: Barrel export que centraliza y expone todos los DTOs del módulo para simplificar sus importaciones.
+
+- **`entities/` (Sanitización y Serialización de Respuestas)**
+  - `postulacion.entity.ts`: Define las entidades de transferencia hacia la red, aplicando el principio de mínimo privilegio. Modela `PostulacionPublicaEntity` para omitir deliberadamente la URL del CV (`cv_url`) en respuestas públicas por razones de seguridad, y `PostulacionAdminEntity` para proveer la ficha completa al panel administrativo (incluyendo `cv_url`, nombre original y relación con los datos de la vacante).
+
+- **`validators/` (Inspección Binaria de Archivos)**
+  - `pdf-file.validator.ts`: Función de aserción de tipos (`asserts file is Express.Multer.File`) que analiza el archivo recibido en memoria antes de cualquier persistencia. Comprueba la presencia del buffer, impone un límite estricto de 4 MB y examina los primeros bytes en busca de la firma mágica `%PDF`, impidiendo la inyección de ejecutables o imágenes renombradas.
+
 ### `src/prisma/` - Capa de Persistencia
 
 Centraliza la conexión a la base de datos utilizando **Prisma ORM**, garantizando una única instancia de conexión (patrón Singleton) para toda la aplicación y evitando fugas de memoria.
@@ -319,6 +339,22 @@ Administra el ciclo de vida de los operadores del sistema, la asignación de per
 
 - **`entities/` (Sanitización de Datos Sensibles)**
   - `usuario.entity.ts`: Capa fundamental para la seguridad perimetral. Formatea el objeto devuelto por Prisma y utiliza herramientas de interceptación (como `@Exclude()` de `class-transformer`) para garantizar matemáticamente que los hashes de las contraseñas **jamás** se incluyan en las respuestas HTTP enviadas al frontend.
+
+### `src/vacantes/` Capa de Gestión de Vacantes Laborales (M-13)
+
+Administra el catálogo de búsquedas y convocatorias laborales de la empresa. Al igual que el módulo de postulaciones, combina el acceso público para la visualización de ofertas laborales activas con una interfaz de administración interna bajo control de acceso granular (RBAC) para el alta, edición, consulta y baja lógica o desactivación de convocatorias.
+
+- **`vacantes.controller.ts`**: Expone las rutas de la API diferenciando el consumo público del administrativo. Provee la consulta pública de convocatorias abiertas (`@Public()`), así como el conjunto completo de operaciones CRUD (`GET`, `POST`, `PATCH`, `DELETE`) protegidas mediante la metadata `@Modulo('VACANTES')` y el requerimiento de edición (`editar: true`) para las operaciones de mutación.
+- **`vacantes.service.ts`**: Encapsula las reglas de negocio y las consultas hacia la base de datos a través de Prisma. Se encarga de aplicar los filtros de visibilidad (`activa: true`), gestionar la ordenación cronológica de las ofertas, verificar la existencia de registros previos a su modificación y administrar la persistencia de títulos, descripciones y requisitos.
+- **`vacantes.module.ts`**: Define y empaqueta el módulo de vacantes, proveyendo los servicios necesarios (incluido `PrismaService`), exportando sus capacidades y permitiendo su vinculación desacoplada con el `AppModule`.
+
+- **`dto/` (Validación y Transformación de Entrada)**
+  - `create-vacante.dto.ts`: Define las restricciones estructurales para la apertura de una nueva vacante (título obligatorio con longitud acotada, descripción detallada, requisitos del puesto y saneamiento de espacios en blanco mediante `Transform`).
+  - `update-vacante.dto.ts`: Aplica modificaciones parciales sobre una vacante existente haciendo uso de `PartialType`, permitiendo actualizar campos individuales (como alternar el estado `activa` para pausar o reactivar convocatorias).
+  - `index.ts`: Barrel export que centraliza y simplifica las importaciones de los DTOs de vacantes en controladores y servicios.
+
+- **`entities/` (Sanitización y Serialización de Respuestas)**
+  - `vacante.entity.ts`: Modela la estructura de salida del recurso hacia el cliente. Normaliza las propiedades retornadas por el motor de base de datos (identificadores, título, contenido, estado de vigencia y marcas de tiempo `creado_en`/`actualizado_en`), garantizando un contrato de datos homogéneo y tipado para el frontend.
 
 - ### `src/vendedores/` Capa de Gestión Comercial (Fuerza de Ventas)
 

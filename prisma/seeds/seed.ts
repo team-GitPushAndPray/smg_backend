@@ -545,6 +545,42 @@ async function main() {
     }
   }
 
+  // =====================================================================
+  // 13. Seed de Reglas de Notificación (M-14 / Sub-issue #121)
+  // =====================================================================
+  console.log('🌱 Poblando reglas de notificación...');
+
+  const chatTaller = process.env.TELEGRAM_CHAT_TALLER || '-100000000';
+  const chatGerencia = process.env.TELEGRAM_CHAT_GERENCIA || '-100000000';
+
+  await prisma.reglaNotificacion.upsert({
+    where: { id: 1 },
+    update: {
+      destino: chatTaller, // Actualizamos el destino por si cambia en el .env
+    },
+    create: {
+      id: 1,
+      tipo_aviso: 'SERVICIO',
+      canal: 'TELEGRAM',
+      destino: chatTaller,
+      etiqueta: 'Grupo Taller',
+    },
+  });
+
+  await prisma.reglaNotificacion.upsert({
+    where: { id: 2 },
+    update: {
+      destino: chatGerencia,
+    },
+    create: {
+      id: 2,
+      tipo_aviso: 'CERTIFICACION',
+      canal: 'TELEGRAM',
+      destino: chatGerencia,
+      etiqueta: 'Grupo Gerencia',
+    },
+  });
+
   await seedPlantillasChecklist(prisma);
 
   console.log('✅ Seed ejecutado correctamente.');

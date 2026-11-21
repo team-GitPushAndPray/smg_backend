@@ -1,9 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { EstadoAviso, Prisma, TipoAviso } from '@prisma/client';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EstadoAviso, EstadoEnvio, EtapaNotificacion, Prisma, TipoAviso } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
 import { FiltroAvisosDto } from './dto/filtro-avisos.dto.js';
 import { AtenderAvisoDto } from './dto/atender-aviso.dto.js';
 import { UpdateEscalonServicioDto } from './dto/update-escalon-servicio.dto.js';
+
 
 
 // Definición estricta de las relaciones requeridas por el Contrato de la API
@@ -41,7 +43,13 @@ type AvisoConRelaciones = Prisma.AvisoGetPayload<typeof avisoInclude>;
 
 @Injectable()
 export class AvisosService {
-  constructor(private readonly prisma: PrismaService) {}
+
+  private readonly logger = new Logger(AvisosService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificacionesService: NotificacionesService,
+  ) { }
 
   private get anticipacionHoras(): number {
     const val = Number(process.env.AVISO_ANTICIPACION_HORAS);
@@ -236,10 +244,10 @@ export class AvisosService {
       },
       escalon: aviso.escalon
         ? {
-            id: aviso.escalon.id,
-            nombre: aviso.escalon.nombre,
-            horas_intervalo: aviso.escalon.horas_intervalo,
-          }
+          id: aviso.escalon.id,
+          nombre: aviso.escalon.nombre,
+          horas_intervalo: aviso.escalon.horas_intervalo,
+        }
         : null,
       hito_horas: aviso.hito_horas,
       horas_restantes: horasRestantes,
@@ -248,10 +256,10 @@ export class AvisosService {
       nota_atencion: aviso.nota_atencion,
       atendido_por: aviso.atendido_por
         ? {
-            id: aviso.atendido_por.id,
-            nombre: aviso.atendido_por.nombre,
-            apellido: aviso.atendido_por.apellido,
-          }
+          id: aviso.atendido_por.id,
+          nombre: aviso.atendido_por.nombre,
+          apellido: aviso.atendido_por.apellido,
+        }
         : null,
       atendido_en: aviso.atendido_en,
       creado_en: aviso.creado_en,
@@ -446,6 +454,182 @@ export class AvisosService {
     });
 
     await this.evaluarMaquina(maquinaId, db);
+  }
+
+
+  /**
+   * Evalúa los avisos PENDIENTE de una máquina y envía notificaciones por los canales configurados cuando nacen (PROXIMO) o vencen (VENCIDO)
+   */
+  async notificarPendientes(maquinaId: number): Promise<void> {
+    try {
+      const avisosPendientes = await this.prisma.aviso.findMany({
+        where: {
+          maquina_id: maquinaId,
+          estado: EstadoAviso.PENDIENTE,
+        },
+        include: avisoInclude.include,
+        orderBy: { id: 'asc' },
+      });
+
+      if (avisosPendientes.length === 0) {
+        return;
+      }
+
+      for (const aviso of avisosPendientes) {
+        const formateado = this.formatearAviso(aviso);
+        const restantes =
+          aviso.tipo === TipoAviso.SERVICIO
+            ? formateado.horas_restantes
+            : formateado.dias_restantes;
+
+        if (restantes === null) {
+          continue;
+        }
+
+        const ahora = new Date();
+        let etapa: EtapaNotificacion | null = null;
+        let whereMarca: Prisma.AvisoWhereInput | null = null;
+        let dataMarca: Prisma.AvisoUpdateManyMutationInput | null = null;
+
+        if (aviso.notificado_en === null && restantes > 0) {
+          etapa = EtapaNotificacion.PROXIMO;
+          whereMarca = {
+            id: aviso.id,
+            estado: EstadoAviso.PENDIENTE,
+            notificado_en: null,
+          };
+          dataMarca = { notificado_en: ahora };
+        } else if (aviso.notificado_en === null && restantes <= 0) {
+          etapa = EtapaNotificacion.VENCIDO;
+          whereMarca = {
+            id: aviso.id,
+            estado: EstadoAviso.PENDIENTE,
+            notificado_en: null,
+            notificado_vencido_en: null,
+          };
+          dataMarca = {
+            notificado_en: ahora,
+            notificado_vencido_en: ahora,
+          };
+        } else if (
+          aviso.notificado_en !== null &&
+          restantes <= 0 &&
+          aviso.notificado_vencido_en === null
+        ) {
+          etapa = EtapaNotificacion.VENCIDO;
+          whereMarca = {
+            id: aviso.id,
+            estado: EstadoAviso.PENDIENTE,
+            notificado_vencido_en: null,
+          };
+          dataMarca = { notificado_vencido_en: ahora };
+        }
+
+        if (!etapa || !whereMarca || !dataMarca) {
+          continue;
+        }
+
+        const marcado = await this.prisma.aviso.updateMany({
+          where: whereMarca,
+          data: dataMarca,
+        });
+
+        if (marcado.count === 0) {
+          continue;
+        }
+
+        const reglas = await this.prisma.reglaNotificacion.findMany({
+          where: {
+            tipo_aviso: aviso.tipo,
+            activo: true,
+          },
+          orderBy: { id: 'asc' },
+        });
+
+        if (reglas.length === 0) {
+          continue;
+        }
+
+        const mensaje = this.armarMensajeNotificacion(
+          formateado,
+          etapa,
+          restantes,
+        );
+
+        for (const regla of reglas) {
+          let estadoEnvio: EstadoEnvio = EstadoEnvio.ENVIADO;
+          let errorDetalle: string | null = null;
+
+          try {
+            const notificador = this.notificacionesService.obtener(regla.canal);
+            await notificador.enviar(regla.destino, mensaje);
+          } catch (error: any) {
+            estadoEnvio = EstadoEnvio.ERROR;
+            errorDetalle = error?.message || String(error);
+            this.logger.error(
+              `Error al enviar notificación (aviso #${aviso.id}, regla #${regla.id}, canal ${regla.canal}): ${errorDetalle}`,
+            );
+          }
+
+          await this.prisma.notificacionEnviada.create({
+            data: {
+              aviso_id: aviso.id,
+              regla_id: regla.id,
+              etapa,
+              canal: regla.canal,
+              destino: regla.destino,
+              mensaje,
+              estado: estadoEnvio,
+              error_detalle: errorDetalle,
+            },
+          });
+        }
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `Error inesperado en notificarPendientes(maquinaId=${maquinaId}): ${error?.message || error}`,
+      );
+    }
+  }
+
+  private armarMensajeNotificacion(
+    aviso: ReturnType<AvisosService['formatearAviso']>,
+    etapa: EtapaNotificacion,
+    restantes: number,
+  ): string {
+    const nombreMaquina = [aviso.maquina.marca, aviso.maquina.modelo]
+      .filter(Boolean)
+      .join(' ');
+    const etiquetaMaquina = [aviso.maquina.codigo_interno, nombreMaquina]
+      .filter(Boolean)
+      .join(' ');
+
+    if (aviso.tipo === TipoAviso.SERVICIO) {
+      const escalonNombre = aviso.escalon?.nombre ?? 'Service';
+
+      if (etapa === EtapaNotificacion.PROXIMO) {
+        return `⚠️ La máquina ${etiquetaMaquina} está próxima al service de ${aviso.hito_horas} horas (${escalonNombre}). Horas actuales: ${aviso.maquina.horas_motor_actual}. Faltan ${restantes} hs.`;
+      }
+
+      return `🔴 La máquina ${etiquetaMaquina} tiene vencido el service de ${aviso.hito_horas} horas (${escalonNombre}). Horas actuales: ${aviso.maquina.horas_motor_actual}.`;
+    }
+
+    const fechaStr = aviso.vence_el
+      ? this.formatearFechaUtc(aviso.vence_el)
+      : '';
+
+    if (etapa === EtapaNotificacion.PROXIMO) {
+      return `⚠️ La certificación de la máquina ${etiquetaMaquina} vence el ${fechaStr} (faltan ${restantes} días).`;
+    }
+
+    return `🔴 La máquina ${etiquetaMaquina} tiene la certificación vencida desde el ${fechaStr}.`;
+  }
+
+  private formatearFechaUtc(fecha: Date): string {
+    const dia = String(fecha.getUTCDate()).padStart(2, '0');
+    const mes = String(fecha.getUTCMonth() + 1).padStart(2, '0');
+    const anio = fecha.getUTCFullYear();
+    return `${dia}/${mes}/${anio}`;
   }
 
 }

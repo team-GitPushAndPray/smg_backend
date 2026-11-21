@@ -20,6 +20,7 @@ import { AlquileresModule } from './alquileres/alquileres.module.js';
 import { AvisosModule } from './avisos/avisos.module.js';
 import { VacantesModule } from './vacantes/vacantes.module.js';
 import { PostulacionesModule } from './postulaciones/postulaciones.module.js';
+import { NotificacionesModule } from './notificaciones/notificaciones.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -42,6 +43,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AvisosModule,
     VacantesModule,
     PostulacionesModule,
+    NotificacionesModule,
   ],
   controllers: [AppController],
   providers: [PrismaService,

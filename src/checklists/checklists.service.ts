@@ -380,6 +380,10 @@ export class ChecklistsService {
     const checklistCreado = txClient
       ? await ejecutarOperacion(txClient)
       : await this.prisma.$transaction(async (tx) => ejecutarOperacion(tx));
+    
+    if (!txClient && esMaquina) {
+      await this.avisosService.notificarPendientes(equipo.id);
+    }
 
     const resumen = this.calcularResumenRespuestas(dto.respuestas);
 

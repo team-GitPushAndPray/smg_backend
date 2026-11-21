@@ -3,6 +3,7 @@ import { EstadoAlquiler, EstadoEquipo, Prisma, TipoChecklist } from '@prisma/cli
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ChecklistsService } from '../checklists/checklists.service.js';
 import { AnularAlquilerDto, CreateAlquilerDto, GetAlquileresQueryDto, UpdateAlquilerDto } from './dto/index.js';
+import { AvisosService } from '../avisos/avisos.service.js';
 
 const DIAS_POR_VENCER = 7;
 
@@ -11,6 +12,7 @@ export class AlquileresService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly checklistsService: ChecklistsService,
+    private readonly avisosService: AvisosService,
   ) { }
 
   private async obtenerAlquilerFormateado(
@@ -530,7 +532,7 @@ export class AlquileresService {
   ) {
     await this.obtenerDatosFormularioChecklist(alquilerId, equipoId, tipo);
 
-    return this.prisma.$transaction(async (tx) => {
+    const alquilerActualizado = await this.prisma.$transaction(async (tx) => {
       const checklistRes = await this.checklistsService.crearChecklistParaAlquiler(
         equipoId,
         tipo,
@@ -587,6 +589,10 @@ export class AlquileresService {
 
       return this.obtenerAlquilerFormateado(tx, alquilerId);
     });
+
+    await this.avisosService.notificarPendientes(equipoId);
+
+    return alquilerActualizado;
   }
 
 }

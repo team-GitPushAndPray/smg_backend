@@ -355,6 +355,10 @@ export class EquiposService {
       return actualizado;
     });
 
+    if (cambioCertificacion) {
+      await this.avisosService.notificarPendientes(id);
+    }
+
     return new EquipoDetalleEntity(
       equipoActualizado as unknown as EquipoConRelacionesPrisma,
     );
@@ -384,6 +388,7 @@ export class EquiposService {
       nuevasHoras,
     );
     await this.avisosService.evaluarMaquina(id);
+    await this.avisosService.notificarPendientes(id);
 
     return this.findOnePrivado(id);
   }

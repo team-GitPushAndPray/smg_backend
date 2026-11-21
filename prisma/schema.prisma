@@ -187,6 +187,21 @@ enum EstadoAviso {
   ATENDIDO
 }
 
+enum CanalNotificacion {
+  TELEGRAM
+  EMAIL
+}
+
+enum EtapaNotificacion {
+  PROXIMO
+  VENCIDO
+}
+
+enum EstadoEnvio {
+  ENVIADO
+  ERROR 
+}
+
 model PlantillaChecklist {
   id       Int             @id @default(autoincrement())
   nombre   String          @unique
@@ -341,11 +356,14 @@ model Aviso {
   atendido_por_id Int?
   atendido_en     DateTime?
   notificado_en   DateTime?
+  notificado_vencido_en   DateTime?
   creado_en       DateTime         @default(now())
 
   maquina         Maquina          @relation(fields: [maquina_id], references: [equipo_id], onDelete: Restrict)
   escalon         EscalonServicio? @relation(fields: [escalon_id], references: [id], onDelete: Restrict)
   atendido_por    Usuario?         @relation(fields: [atendido_por_id], references: [id], onDelete: Restrict)
+
+  notificaciones_enviadas NotificacionEnviada[]
 
   @@unique([maquina_id, tipo, hito_horas])
   @@unique([maquina_id, tipo, vence_el])
@@ -390,4 +408,36 @@ model Postulacion {
   vacante            Vacante           @relation(fields: [vacante_id], references: [id])
 
   @@map("postulaciones")
+}
+
+model ReglaNotificacion {
+  id         Int               @id @default(autoincrement())
+  tipo_aviso TipoAviso
+  canal      CanalNotificacion
+  destino    String            @db.Text
+  etiqueta   String            @db.Text
+  activo     Boolean           @default(true)
+  creado_en  DateTime          @default(now())
+
+  notificaciones NotificacionEnviada[]
+
+  @@map("regla_notificacion")
+}
+
+model NotificacionEnviada {
+  id            Int                @id @default(autoincrement())
+  aviso_id      Int
+  regla_id      Int?
+  etapa         EtapaNotificacion
+  canal         CanalNotificacion
+  destino       String             @db.Text
+  mensaje       String             @db.Text
+  estado        EstadoEnvio
+  error_detalle String?            @db.Text
+  enviado_en    DateTime           @default(now())
+
+  aviso Aviso              @relation(fields: [aviso_id], references: [id])
+  regla ReglaNotificacion? @relation(fields: [regla_id], references: [id])
+
+  @@map("notificacion_enviada")
 }

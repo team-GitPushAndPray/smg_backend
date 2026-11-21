@@ -281,6 +281,28 @@ Administra las entidades que representan las distintas secciones o dominios de l
 - **`entities/` (Sanitización y Serialización)**
   - `modulo.entity.ts`: Clase que mapea el resultado de la base de datos antes de enviarlo por la red. Se encarga de transformar y sanitizar los datos (por ejemplo, garantizando que códigos internos viajen en un formato predecible como MAYÚSCULAS) para evitar inconsistencias visuales o lógicas en el frontend.
 
+### `src/notificaciones/` Capa de Notificaciones y Reglas de Envío
+
+Administra la infraestructura de despacho multicanal (Telegram y Email), la configuración de reglas que determinan qué destinatarios reciben cada tipo de aviso (`SERVICIO` o `CERTIFICACION`) y la consulta del historial de envíos. Protege sus endpoints bajo el módulo `AVISOS` diferenciando permisos de lectura y edición (`@Modulo('AVISOS', { editar: true })`).
+
+- **`notificaciones.controller.ts`**: Expone los endpoints bajo `/api/notificaciones`: envío de mensajes de prueba (`POST /prueba`), administración de reglas (`GET /reglas`, `POST /reglas`, `PATCH /reglas/:id`, sin `DELETE` para preservar la integridad del historial) y consulta paginada del registro de envíos (`GET /registro`).
+- **`notificaciones.service.ts`**: Actúa como despachador/selector de canales, resolviendo dinámicamente la implementación concreta de `Notificador` (`TELEGRAM` o `EMAIL`) para ser consumida tanto por el endpoint de prueba como por el motor automático en `AvisosService`.
+- **`notificaciones-gestion.service.ts`**: Centraliza la lógica de negocio y persistencia en Prisma para el CRUD parcial de `ReglaNotificacion` (incluyendo la validación cruzada entre `canal` y `destino`) y la consulta paginada y filtrada de `NotificacionEnviada` con datos enriquecidos de la máquina y la etiqueta de la regla.
+- **`notificaciones.module.ts`**: Empaqueta el dominio importando `PrismaModule`, registra los notificadores y servicios de gestión, y exporta `NotificacionesService` para que otros módulos (como `AvisosModule`) puedan despachar alertas.
+
+- **`dto/` (Validación y Contratos de Entrada)**
+  - `crear-regla-notificacion.dto.ts`: Valida la creación de nuevas reglas (`tipo_aviso`, `canal`, `destino`, `etiqueta` de hasta 60 caracteres y `activo` opcional).
+  - `actualizar-regla-notificaciones.dto.ts`: Define los campos opcionales para actualizaciones parciales (`PATCH`), incluyendo la baja lógica mediante `activo: false`.
+  - `filtro-registro-notificaciones.dto.ts`: Valida y normaliza los parámetros de consulta del historial (`estado`, `canal`, `page` y `limit` con valor por defecto `20` y máximo `100`), tolerando filtros vacíos provenientes del frontend.
+  - `prueba-notificacion.dto.ts`: Valida el `canal` y `destino` requeridos por el endpoint `POST /api/notificaciones/prueba`.
+
+- **`interfaces/` (Contratos de Canales)**
+  - `notificador.interface.ts`: Define la interfaz común `Notificador` con el método `enviar(destino, mensaje)`, desacoplando la lógica de negocio de los proveedores externos y facilitando la incorporación de nuevos canales.
+
+- **`notificadores/` (Proveedores de Envío)**
+  - `telegram.notificador.ts`: Implementa el envío de alertas hacia chats y grupos mediante la Bot API de Telegram usando `chat_id` numéricos.
+  - `email.notificador.ts`: Implementa el envío de correos electrónicos mediante SMTP para las reglas configuradas con el canal `EMAIL`.
+
 ### `src/postulaciones/` Capa de Gestión y Recepción de Postulaciones (M-13)
 
 Gestiona el ciclo de vida completo de las postulaciones laborales asociadas a vacantes activas. Implementa un canal híbrido que combina la recepción pública de candidatos sin autenticación previa con un panel administrativo interno protegido por control de acceso basado en módulos (RBAC), contemplando subida segura de archivos en memoria, validación binaria e integración con almacenamiento externo en la nube.

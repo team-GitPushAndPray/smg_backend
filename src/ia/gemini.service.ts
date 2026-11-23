@@ -1,40 +1,10 @@
 import { BadGatewayException, GatewayTimeoutException, HttpException, HttpStatus, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { GoogleGenAI, Type, type Schema } from '@google/genai';
-import { AnalizarCVParams, GenerarJsonParams, GenerarJsonResultado, ResultadoAnalisisCV } from './interfaces/ia.interfaces.js';
+import { GoogleGenAI } from '@google/genai';
+import { GEMINI_MODELO_DEFAULT, GEMINI_TIMEOUT_MS } from './constants/gemini.constants.js';
+import { AnalizarCVParams, GenerarJsonParams, GenerarJsonResultado, RespuestaAnalisisRaw, RespuestaResumenRaw, ResultadoAnalisisCV, ResultadoResumenVacante, ResumirVacanteParams, TopCandidatoIA } from './interfaces/ia.interfaces.js';
 import { construirMensajeVacante, SYSTEM_INSTRUCTION_ANALISIS_CV, VERSION_PROMPT_ANALISIS } from './prompts/analisis-cv.prompt.js';
-
-const TIMEOUT_MS = 25_000;
-const MODELO_DEFAULT = 'gemini-3.5-flash-lite';
-
-interface RespuestaAnalisisRaw {
-  puntaje: unknown;
-  resumen_experiencia: unknown;
-  justificacion: unknown;
-}
-
-const SCHEMA_ANALISIS_CV: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    puntaje: {
-      type: Type.INTEGER,
-      description: 'Puntaje entero de afinidad entre 0 y 100.',
-    },
-    resumen_experiencia: {
-      type: Type.STRING,
-      description:
-        'Hasta 3 oraciones con la experiencia y formación relevantes detectadas.',
-    },
-    justificacion: {
-      type: Type.STRING,
-      description:
-        'Hasta 3 oraciones explicando el puntaje: qué requisitos cumple y cuáles no.',
-    },
-  },
-  required: ['puntaje', 'resumen_experiencia', 'justificacion'],
-};
-
-
-
+import { construirMensajeResumenVacante, SYSTEM_INSTRUCTION_RESUMEN_VACANTE, VERSION_PROMPT_RESUMEN } from './prompts/resumen-vacante.prompt.js';
+import { SCHEMA_ANALISIS_CV, SCHEMA_RESUMEN_VACANTE } from './schemas/gemini.schemas.js';
 
 
 @Injectable()
@@ -45,22 +15,22 @@ export class GeminiService {
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
-    this.modelo = process.env.GEMINI_MODEL?.trim() || MODELO_DEFAULT;
+    this.modelo = process.env.GEMINI_MODEL?.trim() || GEMINI_MODELO_DEFAULT;
 
     if (!apiKey) {
       this.ai = null;
       this.logger.warn(
         'GEMINI_API_KEY no configurada. La app inicia sin funcionalidad de IA.',
       );
-
       return;
     }
 
     this.ai = new GoogleGenAI({
       apiKey,
-      httpOptions: { timeout: TIMEOUT_MS },
+      httpOptions: { timeout: GEMINI_TIMEOUT_MS },
     });
   }
+
 
   async generarJson<T>({
     systemInstruction,
@@ -72,7 +42,7 @@ export class GeminiService {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
     try {
       const response = await this.ai.models.generateContent({
@@ -105,6 +75,7 @@ export class GeminiService {
       clearTimeout(timer);
     }
   }
+
 
   async analizarCv({
     pdf,
@@ -144,6 +115,114 @@ export class GeminiService {
     };
   }
 
+
+  async resumirVacante({
+    vacante,
+    candidatos,
+  }: ResumirVacanteParams): Promise<ResultadoResumenVacante> {
+    const { data, modelo } = await this.generarJson<RespuestaResumenRaw>({
+      systemInstruction: SYSTEM_INSTRUCTION_RESUMEN_VACANTE,
+      contenido: construirMensajeResumenVacante(vacante, candidatos),
+      schema: SCHEMA_RESUMEN_VACANTE,
+    });
+
+    const idsPermitidos = new Set(candidatos.map((c) => c.postulacion_id));
+    const maxTop = Math.min(3, candidatos.length);
+
+    if (!this.esResumenValido(data, idsPermitidos, maxTop)) {
+      this.logger.warn(
+        `Estructura de resumen inválida: ${JSON.stringify(data)}`,
+      );
+      throw new BadGatewayException('La IA devolvió una respuesta inválida.');
+    }
+
+    const topOrdenado = [...data.top]
+      .sort((a, b) => a.posicion - b.posicion)
+      .map((item, idx) => ({
+        posicion: idx + 1,
+        postulacion_id: item.postulacion_id,
+        motivo: item.motivo.trim(),
+      }));
+
+    return {
+      top: topOrdenado,
+      comparacion: data.comparacion.trim(),
+      recomendacion: data.recomendacion.trim(),
+      modelo,
+      version_prompt: VERSION_PROMPT_RESUMEN,
+    };
+  }
+
+
+  private esResumenValido(
+    data: unknown,
+    idsPermitidos: Set<number>,
+    maxTop: number,
+  ): data is {
+    top: TopCandidatoIA[];
+    comparacion: string;
+    recomendacion: string;
+  } {
+    if (!data || typeof data !== 'object') {
+      return false;
+    }
+
+    const obj = data as RespuestaResumenRaw;
+    if (
+      !Array.isArray(obj.top) ||
+      obj.top.length === 0 ||
+      obj.top.length > maxTop
+    ) {
+      return false;
+    }
+
+    const comparacionValida =
+      typeof obj.comparacion === 'string' && obj.comparacion.trim().length > 0;
+    const recomendacionValida =
+      typeof obj.recomendacion === 'string' &&
+      obj.recomendacion.trim().length > 0;
+
+    if (!comparacionValida || !recomendacionValida) {
+      return false;
+    }
+
+    const idsVistos = new Set<number>();
+
+    for (const item of obj.top) {
+      if (!item || typeof item !== 'object') return false;
+      const { posicion, postulacion_id, motivo } = item as Record<
+        string,
+        unknown
+      >;
+
+      if (
+        typeof posicion !== 'number' ||
+        !Number.isInteger(posicion) ||
+        posicion < 1
+      ) {
+        return false;
+      }
+
+      if (
+        typeof postulacion_id !== 'number' ||
+        !Number.isInteger(postulacion_id) ||
+        !idsPermitidos.has(postulacion_id) ||
+        idsVistos.has(postulacion_id)
+      ) {
+        return false;
+      }
+
+      if (typeof motivo !== 'string' || motivo.trim().length === 0) {
+        return false;
+      }
+
+      idsVistos.add(postulacion_id);
+    }
+
+    return true;
+  }
+
+
   private esAnalisisValido(
     data: unknown,
   ): data is {
@@ -173,6 +252,7 @@ export class GeminiService {
     return puntajeValido && resumenValido && justificacionValida;
   }
 
+
   private traducirError(error: unknown, fueAbortado: boolean): HttpException {
     if (error instanceof HttpException) {
       return error;
@@ -185,7 +265,8 @@ export class GeminiService {
       message?: string;
     };
 
-    const mensajeOriginal = err?.message || 'Error desconocido al consultar la IA';
+    const mensajeOriginal =
+      err?.message || 'Error desconocido al consultar la IA';
     const mensajeLower = mensajeOriginal.toLowerCase();
 
     if (
@@ -212,5 +293,5 @@ export class GeminiService {
     this.logger.error(`Error al consultar Gemini: ${mensajeOriginal}`);
     return new BadGatewayException(mensajeOriginal);
   }
-
+  
 }

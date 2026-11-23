@@ -7,5 +7,6 @@ import { PrismaModule } from '../prisma/prisma.module.js';
   imports: [PrismaModule],
   controllers: [IaController],
   providers: [GeminiService],
+  exports: [GeminiService],
 })
 export class IaModule {}

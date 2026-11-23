@@ -378,21 +378,29 @@ enum EstadoPostulacion {
   DESCARTADO
 }
 
+enum EstadoAnalisis {
+  PENDIENTE
+  COMPLETADO
+  ERROR
+}
+
 model Vacante {
-  id             Int           @id @default(autoincrement())
-  titulo         String
-  descripcion    String
-  requisitos     String
-  activa         Boolean       @default(true)
-  creado_en      DateTime      @default(now())
-  actualizado_en DateTime      @updatedAt
-  postulaciones  Postulacion[]
+  id                         Int               @id @default(autoincrement())
+  titulo                     String
+  descripcion                String
+  requisitos                 String
+  activa                     Boolean           @default(true)
+  requisitos_actualizados_en DateTime          @default(now())
+  creado_en                  DateTime          @default(now())
+  actualizado_en             DateTime          @updatedAt
+  postulaciones              Postulacion[]
+  resumen_ia                 ResumenVacanteIa?
 
   @@map("vacantes")
 }
 
 model Postulacion {
-  id                 Int               @id @default(autoincrement())
+  id                 Int                  @id @default(autoincrement())
   vacante_id         Int
   nombre             String
   apellido           String
@@ -401,13 +409,49 @@ model Postulacion {
   mensaje            String?
   cv_url             String
   cv_nombre_original String
-  estado             EstadoPostulacion @default(NUEVO)
-  creado_en          DateTime          @default(now())
-  actualizado_en     DateTime          @updatedAt
+  estado             EstadoPostulacion    @default(NUEVO)
+  consentimiento_en  DateTime?
+  creado_en          DateTime             @default(now())
+  actualizado_en     DateTime             @updatedAt
 
-  vacante            Vacante           @relation(fields: [vacante_id], references: [id])
+  vacante            Vacante              @relation(fields: [vacante_id], references: [id])
+  analisis           AnalisisPostulacion?
 
   @@map("postulaciones")
+}
+
+model AnalisisPostulacion {
+  id                  Int            @id @default(autoincrement())
+  postulacion_id      Int            @unique
+  estado              EstadoAnalisis @default(PENDIENTE)
+  puntaje             Int?
+  resumen_experiencia String?        @db.Text
+  justificacion       String?        @db.Text
+  error_detalle       String?        @db.Text
+  modelo              String?        @db.Text
+  version_prompt      String?        @db.Text
+  analizado_en        DateTime?
+  creado_en           DateTime       @default(now())
+  actualizado_en      DateTime       @updatedAt
+
+  postulacion         Postulacion    @relation(fields: [postulacion_id], references: [id], onDelete: Cascade)
+
+  @@map("analisis_postulacion")
+}
+
+model ResumenVacanteIa {
+  id                  Int      @id @default(autoincrement())
+  vacante_id          Int      @unique
+  top                 Json
+  comparacion         String   @db.Text
+  recomendacion       String   @db.Text
+  cantidad_analizadas Int
+  modelo              String   @db.Text
+  generado_en         DateTime @default(now())
+
+  vacante             Vacante  @relation(fields: [vacante_id], references: [id])
+
+  @@map("resumen_vacante_ia")
 }
 
 model ReglaNotificacion {

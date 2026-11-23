@@ -2,6 +2,11 @@ import { EstadoPostulacion } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
 
+export enum OrdenPostulaciones {
+  RECIENTES = 'recientes',
+  AFINIDAD = 'afinidad',
+}
+
 const toOptionalInt = ({ value }: { value: unknown }): unknown => {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'string') {
@@ -33,5 +38,11 @@ export class FilterPostulacionesDto {
     message: `El filtro estado debe ser uno de los siguientes valores: ${Object.values(EstadoPostulacion).join(', ')}`,
   })
   estado?: EstadoPostulacion;
+
+  @IsOptional()
+  @IsEnum(OrdenPostulaciones, {
+    message: 'El orden debe ser "recientes" o "afinidad"',
+  })
+  orden?: OrdenPostulaciones = OrdenPostulaciones.RECIENTES;
 
 }

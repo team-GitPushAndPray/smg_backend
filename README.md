@@ -257,6 +257,33 @@ Es el módulo central (Core Domain) del backend. Gestiona todo el ciclo de vida 
 - **`entities/` (Representación de Salida)**
   - `equipo.entity.ts`: Mapea las respuestas de Prisma, aplanando las relaciones anidadas (ej: extrayendo las horas de la tabla `maquina` hacia el primer nivel del JSON) para entregarle al Frontend una estructura limpia, predecible y lista para renderizar.
 
+### `src/ia/` Capa de Integración con Inteligencia Artificial (Gemini)
+
+Centraliza la comunicación con la API de Google Gemini (`@google/genai`), la generación de respuestas estructuradas en formato JSON, el versionado de *prompts* y el manejo resiliente de errores y tiempos de espera para el análisis de CVs y el resumen ejecutivo de vacantes.
+
+- **`ia.controller.ts`**: Expone los endpoints internos de diagnóstico y prueba controlada de conectividad con el proveedor de IA.
+- **`gemini.service.ts`**: Servicio principal que encapsula el cliente de Google GenAI. Implementa `generarJson` con control de *timeout* mediante `AbortController`, traducción estandarizada de errores HTTP (`429`, `502`, `503`, `504`) y los métodos de dominio `analizarCv` (procesamiento multimodal de PDF + requisitos de vacante) y `resumirVacante` (selección del top 3, comparación y recomendación con validación estricta de IDs).
+- **`ia.module.ts`**: Empaqueta la configuración de IA y exporta `GeminiService` para ser consumido de forma desacoplada por los módulos de `Postulaciones` y `Vacantes`.
+
+- **`constants/` (Configuración Base del Proveedor)**
+  - `gemini.constants.ts`: Define los valores por defecto del servicio (`GEMINI_MODELO_DEFAULT = 'gemini-3.5-flash-lite'` y `GEMINI_TIMEOUT_MS = 25_000`), permitiendo sobrescribir el modelo mediante variables de entorno sin modificar el código.
+
+- **`dto/` (Validación de Entrada)**
+  - `prueba-ia.dto.ts`, `create-ia.dto.ts` y `update-ia.dto.ts`: DTOs de validación con `class-validator` para los payloads recibidos en los endpoints de prueba y gestión del módulo.
+
+- **`entities/` (Formateo de Respuestas)**
+  - `ia.entity.ts`: Estructura y tipa las respuestas serializadas expuestas por el controlador del módulo.
+
+- **`interfaces/` (Contratos y Tipado Estricto)**
+  - `ia.interfaces.ts`: Define los contratos de entrada y salida de `GeminiService` (`AnalizarCVParams`, `ResultadoAnalisisCV`, `ResumirVacanteParams`, `ResultadoResumenVacante`, `GenerarJsonParams`) junto con las interfaces *raw* utilizadas para validar la integridad estructural antes de mapear los resultados.
+
+- **`prompts/` (Ingeniería y Versionado de Prompts)**
+  - `analisis-cv.prompt.ts`: Contiene las instrucciones de sistema (`SYSTEM_INSTRUCTION_ANALISIS_CV`), el constructor del contexto de la vacante y la constante `VERSION_PROMPT_ANALISIS` para auditar qué versión generó cada evaluación.
+  - `resumen-vacante.prompt.ts`: Define las reglas de selección imparcial (`SYSTEM_INSTRUCTION_RESUMEN_VACANTE`), el formateador textual de candidatos analizados y la constante `VERSION_PROMPT_RESUMEN`.
+
+- **`schemas/` (Salidas Estructuradas / Structured Outputs)**
+  - `gemini.schemas.ts`: Define los esquemas tipados (`SCHEMA_ANALISIS_CV` y `SCHEMA_RESUMEN_VACANTE`) mediante `Type` y `Schema` de `@google/genai` para garantizar que Gemini responda siempre con la estructura JSON esperada.
+
 ### `src/images/` Capa de Integración Multimedia y Almacenamiento Externo
 
 Módulo de infraestructura que centraliza la comunicación con servicios externos de almacenamiento en la nube (Cloudinary). Su diseño desacopla a los módulos de dominio de los detalles de implementación de terceros, respetando el principio de **Responsabilidad Única (SRP)** y permitiendo la reutilización del servicio tanto en el registro de checklists como en la futura gestión de fotos de equipos (**F-05**).
@@ -303,25 +330,26 @@ Administra la infraestructura de despacho multicanal (Telegram y Email), la conf
   - `telegram.notificador.ts`: Implementa el envío de alertas hacia chats y grupos mediante la Bot API de Telegram usando `chat_id` numéricos.
   - `email.notificador.ts`: Implementa el envío de correos electrónicos mediante SMTP para las reglas configuradas con el canal `EMAIL`.
 
-### `src/postulaciones/` Capa de Gestión y Recepción de Postulaciones (M-13)
+### `src/postulaciones/` Capa de Gestión, Recepción y Evaluación IA de Postulaciones (M-13)
 
-Gestiona el ciclo de vida completo de las postulaciones laborales asociadas a vacantes activas. Implementa un canal híbrido que combina la recepción pública de candidatos sin autenticación previa con un panel administrativo interno protegido por control de acceso basado en módulos (RBAC), contemplando subida segura de archivos en memoria, validación binaria e integración con almacenamiento externo en la nube.
+Gestiona el ciclo de vida completo de las postulaciones laborales asociadas a vacantes activas. Implementa un canal híbrido que combina la recepción pública de candidatos sin autenticación previa con un panel administrativo interno protegido por control de acceso basado en módulos (RBAC), contemplando subida segura de archivos en memoria, validación binaria, almacenamiento externo en Cloudinary, registro de consentimiento y evaluación automatizada de afinidad mediante Inteligencia Artificial.
 
-- **`postulaciones.controller.ts`**: Expone tanto el endpoint público para la recepción de postulaciones (`POST /api/postulaciones` con `@Public()`), procesando cargas `multipart/form-data` mediante interceptores de Multer en memoria, como las rutas operativas del panel administrativo (`GET /api/postulaciones`, `GET /api/postulaciones/:id` y `PATCH /api/postulaciones/:id/estado`) protegidas bajo la metadata `@Modulo('POSTULACIONES')` y requerimiento de edición (`editar: true`).
-- **`postulaciones.service.ts`**: Orquesta la lógica de negocio del módulo: intercepta envíos automatizados vía técnica honeypot, verifica la vigencia de la vacante (`activa: true`), delega la subida por stream del PDF a Cloudinary, persiste los registros en PostgreSQL mediante Prisma aplicando orden cronológico descendente y gestiona las transiciones de estado (`NUEVO`, `EN_REVISION`, `ENTREVISTA`, `FINALISTA`, `DESCARTADO`).
-- **`postulaciones.module.ts`**: Encapsula y declara los controladores, servicios y dependencias requeridas (incluyendo la inyección de `PrismaService`), integrando el dominio de postulaciones de forma limpia en el `AppModule`.
+- **`postulaciones.controller.ts`**: Expone tanto el endpoint público para la recepción de postulaciones (`POST /api/postulaciones` con `@Public()`), procesando cargas `multipart/form-data` mediante interceptores de Multer en memoria, como las rutas operativas del panel administrativo (`GET /api/postulaciones`, `GET /api/postulaciones/:id`, `PATCH /api/postulaciones/:id/estado` y `POST /api/postulaciones/:id/analizar`) protegidas bajo la metadata `@Modulo('POSTULACIONES')` y requerimiento de edición (`editar: true`).
+- **`postulaciones.service.ts`**: Orquesta la lógica de negocio del módulo: intercepta envíos automatizados vía técnica *honeypot*, verifica la vigencia de la vacante (`activa: true`), delega la subida por *stream* del PDF a Cloudinary, persiste la postulación junto con `consentimiento_en` y el registro inicial de análisis en PostgreSQL mediante Prisma, dispara la evaluación automática con IA sin bloquear la respuesta pública, gestiona las transiciones de estado (`NUEVO`, `EN_REVISION`, `ENTREVISTA`, `FINALISTA`, `DESCARTADO`) y resuelve el ordenamiento de la bandeja tanto cronológico (`recientes`) como por ranking de afinidad (`afinidad`).
+- **`postulaciones-analisis.service.ts`**: Servicio dedicado al ciclo de vida del análisis de CVs con IA. Ejecuta el análisis inicial en memoria (`file.buffer`) al recibir una postulación pública y permite el re-análisis manual descargando el PDF desde `cv_url` en Cloudinary; actualiza el registro mediante `upsert` a `COMPLETADO` con puntaje y justificación, o captura cualquier fallo externo dejando estado `ERROR` con `error_detalle` y limpiando métricas previas para evitar datos inconsistentes.
+- **`postulaciones.module.ts`**: Encapsula y declara los controladores, servicios (`PostulacionesService` y `PostulacionesAnalisisService`) y dependencias requeridas (`PrismaModule` e `IaModule`), integrando el dominio de postulaciones de forma limpia en el `AppModule`.
 
 - **`dto/` (Validación y Transformación de Entrada)**
-  - `create-postulacion.dto.ts`: Valida los datos del formulario público del candidato (saneamiento de cadenas con `trim`, tipado entero positivo para `vacante_id`, normalización y casing de email, longitudes máximas y campo trampa anti-spam `website`).
-  - `filter-postulaciones.dto.ts`: Gestiona y sanitiza los parámetros opcionales de búsqueda (`vacante_id` numérico y `estado` validado contra el enum de Prisma) para las consultas de la bandeja de postulantes.
+  - `create-postulacion.dto.ts`: Valida los datos del formulario público del candidato (saneamiento de cadenas con `trim`, tipado entero positivo para `vacante_id`, normalización y *casing* de email, longitudes máximas, aceptación obligatoria del consentimiento `acepta_tratamiento` y campo trampa anti-spam `website`).
+  - `filter-postulaciones.dto.ts`: Gestiona y sanitiza los parámetros opcionales de búsqueda (`vacante_id` numérico con transformación segura ante valores vacíos, `estado` validado contra el enum de Prisma y `orden` mediante `OrdenPostulaciones`: `recientes` por defecto o `afinidad`) para las consultas y rankings de la bandeja de postulantes.
   - `update-estado-postulacion.dto.ts`: Valida y normaliza en mayúsculas la mutación del estado de una postulación desde el panel administrativo, rechazando estados inexistentes con `400 Bad Request`.
-  - `index.ts`: Barrel export que centraliza y expone todos los DTOs del módulo para simplificar sus importaciones.
+  - `index.ts`: *Barrel export* que centraliza y expone todos los DTOs y enums de filtrado del módulo para simplificar sus importaciones.
 
 - **`entities/` (Sanitización y Serialización de Respuestas)**
-  - `postulacion.entity.ts`: Define las entidades de transferencia hacia la red, aplicando el principio de mínimo privilegio. Modela `PostulacionPublicaEntity` para omitir deliberadamente la URL del CV (`cv_url`) en respuestas públicas por razones de seguridad, y `PostulacionAdminEntity` para proveer la ficha completa al panel administrativo (incluyendo `cv_url`, nombre original y relación con los datos de la vacante).
+  - `postulacion.entity.ts`: Define las entidades de transferencia hacia la red aplicando el principio de mínimo privilegio. Modela `PostulacionPublicaEntity` para omitir deliberadamente la URL del CV (`cv_url`) y las métricas internas de evaluación en respuestas públicas, y `PostulacionAdminEntity` para proveer al panel administrativo la ficha completa, el resultado del análisis (`analisis`), el cálculo centralizado de vigencia (`desactualizado` respecto a `vacante.requisitos_actualizados_en`) y la `posicion` correlativa cuando se consulta el ranking por afinidad.
 
 - **`validators/` (Inspección Binaria de Archivos)**
-  - `pdf-file.validator.ts`: Función de aserción de tipos (`asserts file is Express.Multer.File`) que analiza el archivo recibido en memoria antes de cualquier persistencia. Comprueba la presencia del buffer, impone un límite estricto de 4 MB y examina los primeros bytes en busca de la firma mágica `%PDF`, impidiendo la inyección de ejecutables o imágenes renombradas.
+  - `pdf-file.validator.ts`: Función de aserción de tipos (`asserts file is Express.Multer.File`) que analiza el archivo recibido en memoria antes de cualquier persistencia. Comprueba la presencia del *buffer*, impone un límite estricto de 4 MB y examina los primeros bytes en busca de la firma mágica `%PDF`, impidiendo la inyección de ejecutables o imágenes renombradas.
 
 ### `src/prisma/` - Capa de Persistencia
 
@@ -362,21 +390,23 @@ Administra el ciclo de vida de los operadores del sistema, la asignación de per
 - **`entities/` (Sanitización de Datos Sensibles)**
   - `usuario.entity.ts`: Capa fundamental para la seguridad perimetral. Formatea el objeto devuelto por Prisma y utiliza herramientas de interceptación (como `@Exclude()` de `class-transformer`) para garantizar matemáticamente que los hashes de las contraseñas **jamás** se incluyan en las respuestas HTTP enviadas al frontend.
 
-### `src/vacantes/` Capa de Gestión de Vacantes Laborales (M-13)
+### `src/vacantes/` Capa de Gestión de Vacantes Laborales y Resumen Ejecutivo IA (M-13)
 
-Administra el catálogo de búsquedas y convocatorias laborales de la empresa. Al igual que el módulo de postulaciones, combina el acceso público para la visualización de ofertas laborales activas con una interfaz de administración interna bajo control de acceso granular (RBAC) para el alta, edición, consulta y baja lógica o desactivación de convocatorias.
+Administra el catálogo de búsquedas y convocatorias laborales de la empresa junto con la síntesis ejecutiva asistida por Inteligencia Artificial para gerencia. Combina el acceso público para la visualización de ofertas laborales activas con una interfaz de administración interna bajo control de acceso granular (RBAC) para el alta, edición, consulta, baja lógica y generación de resúmenes comparativos de postulantes.
 
-- **`vacantes.controller.ts`**: Expone las rutas de la API diferenciando el consumo público del administrativo. Provee la consulta pública de convocatorias abiertas (`@Public()`), así como el conjunto completo de operaciones CRUD (`GET`, `POST`, `PATCH`, `DELETE`) protegidas mediante la metadata `@Modulo('VACANTES')` y el requerimiento de edición (`editar: true`) para las operaciones de mutación.
-- **`vacantes.service.ts`**: Encapsula las reglas de negocio y las consultas hacia la base de datos a través de Prisma. Se encarga de aplicar los filtros de visibilidad (`activa: true`), gestionar la ordenación cronológica de las ofertas, verificar la existencia de registros previos a su modificación y administrar la persistencia de títulos, descripciones y requisitos.
-- **`vacantes.module.ts`**: Define y empaqueta el módulo de vacantes, proveyendo los servicios necesarios (incluido `PrismaService`), exportando sus capacidades y permitiendo su vinculación desacoplada con el `AppModule`.
+- **`vacantes.controller.ts`**: Expone las rutas de la API diferenciando el consumo público del administrativo. Provee la consulta pública de convocatorias abiertas (`GET /api/vacantes/publicas` con `@Public()`), las operaciones administrativas sobre convocatorias (`GET /api/vacantes`, `POST /api/vacantes`, `PATCH /api/vacantes/:id`) y los endpoints del resumen ejecutivo con IA (`POST /api/vacantes/:id/resumen-ia` y `GET /api/vacantes/:id/resumen-ia`), protegidos mediante la metadata `@Modulo('POSTULACIONES')` y el requerimiento de edición (`editar: true`) para las operaciones de mutación y generación.
+- **`vacantes.service.ts`**: Encapsula las reglas de negocio y las consultas hacia la base de datos a través de Prisma. Se encarga de filtrar vacantes activas para el portal público, ordenar las convocatorias privadas con conteo de postulaciones, verificar la existencia previa de registros y actualizar `requisitos_actualizados_en` únicamente cuando cambian `titulo`, `descripcion` o `requisitos` (evitando invalidar análisis previos al simplemente activar o desactivar una vacante).
+- **`vacantes-resumen.service.ts`**: Servicio dedicado a la generación y consulta del resumen ejecutivo de una vacante (`resumen_vacante_ia`). Toma hasta los 30 candidatos con análisis `COMPLETADO` ordenados por puntaje, invoca a `GeminiService.resumirVacante` enviando únicamente texto estructurado (sin PDFs), persiste el resultado mediante `upsert` y, al leerlo, enriquece el `top` con los nombres y puntajes vigentes mientras calcula dinámicamente `desactualizado` (cuando existen análisis o cambios de requisitos posteriores a `generado_en`).
+- **`vacantes.module.ts`**: Define y empaqueta el módulo de vacantes, importando `PrismaModule` e `IaModule`, registrando `VacantesService` y `VacantesResumenService`, y exportando `VacantesService` para su consumo desacoplado en otros dominios.
 
 - **`dto/` (Validación y Transformación de Entrada)**
   - `create-vacante.dto.ts`: Define las restricciones estructurales para la apertura de una nueva vacante (título obligatorio con longitud acotada, descripción detallada, requisitos del puesto y saneamiento de espacios en blanco mediante `Transform`).
   - `update-vacante.dto.ts`: Aplica modificaciones parciales sobre una vacante existente haciendo uso de `PartialType`, permitiendo actualizar campos individuales (como alternar el estado `activa` para pausar o reactivar convocatorias).
-  - `index.ts`: Barrel export que centraliza y simplifica las importaciones de los DTOs de vacantes en controladores y servicios.
+  - `index.ts`: *Barrel export* que centraliza y simplifica las importaciones de los DTOs de vacantes en controladores y servicios.
 
 - **`entities/` (Sanitización y Serialización de Respuestas)**
-  - `vacante.entity.ts`: Modela la estructura de salida del recurso hacia el cliente. Normaliza las propiedades retornadas por el motor de base de datos (identificadores, título, contenido, estado de vigencia y marcas de tiempo `creado_en`/`actualizado_en`), garantizando un contrato de datos homogéneo y tipado para el frontend.
+  - `vacante.entity.ts`: Modela las vistas pública (`VacantePublicaEntity`) y privada (`VacantePrivadaEntity`) del recurso hacia el cliente, normalizando identificadores, título, contenido, estado de vigencia, conteo de postulaciones y marcas de tiempo.
+  - `resumen-vacante.entity.ts`: Define `ResumenVacanteEntity` y `TopCandidatoResumenView` para estructurar y tipar la respuesta del resumen ejecutivo de IA hacia gerencia (`top` enriquecido con nombre y puntaje actual, `comparacion`, `recomendacion`, `cantidad_analizadas`, `modelo`, `generado_en` y el indicador `desactualizado`).
 
 - ### `src/vendedores/` Capa de Gestión Comercial (Fuerza de Ventas)
 

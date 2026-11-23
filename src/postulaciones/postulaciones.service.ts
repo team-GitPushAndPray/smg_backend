@@ -1,14 +1,40 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { EstadoPostulacion, Prisma } from '@prisma/client';
+import { EstadoAnalisis, EstadoPostulacion, Prisma } from '@prisma/client';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { CreatePostulacionDto, FilterPostulacionesDto, UpdateEstadoPostulacionDto } from './dto/index.js';
+import { CreatePostulacionDto, FilterPostulacionesDto, OrdenPostulaciones, UpdateEstadoPostulacionDto } from './dto/index.js';
 import { PostulacionAdminEntity, PostulacionPublicaEntity } from './entities/postulacion.entity.js';
 import { validarArchivoPdf } from './validators/pdf-file.validator.js';
+import { PostulacionesAnalisisService } from './postulaciones-analisis.service.js';
+
+const POSTULACION_ADMIN_INCLUDE = {
+  vacante: {
+    select: {
+      id: true,
+      titulo: true,
+      activa: true,
+      requisitos_actualizados_en: true,
+    },
+  },
+  analisis: {
+    select: {
+      estado: true,
+      puntaje: true,
+      resumen_experiencia: true,
+      justificacion: true,
+      error_detalle: true,
+      modelo: true,
+      analizado_en: true,
+    },
+  },
+} as const;
 
 @Injectable()
 export class PostulacionesService {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postulacionesAnalisisService: PostulacionesAnalisisService,
+  ) {
     if (process.env.CLOUDINARY_CLOUD_NAME) {
       cloudinary.config({
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -18,7 +44,7 @@ export class PostulacionesService {
     }
   }
 
-  
+
   /**
    * POST /api/postulaciones
    * Recibe una postulación pública, evalúa el honeypot, valida el PDF y la vacante, sube el CV a Cloudinary y guarda el registro con estado NUEVO
@@ -69,8 +95,17 @@ export class PostulacionesService {
         cv_url: uploadResult.secure_url,
         cv_nombre_original: nombreOriginalLimpio,
         estado: EstadoPostulacion.NUEVO,
+        consentimiento_en: new Date(),
+        analisis: {
+          create: {},
+        },
       },
     });
+
+    await this.postulacionesAnalisisService.analizar(
+      nuevaPostulacion.id,
+      file.buffer,
+    );
 
     return new PostulacionPublicaEntity(nuevaPostulacion);
   }
@@ -78,12 +113,19 @@ export class PostulacionesService {
 
   /**
    * GET /api/postulaciones
-   * Lista las postulaciones con filtros opcionales (vacante_id, estado),
-   * ordenadas de la más nueva a la más vieja e incluyendo el título de la vacante.
+   * Lista las postulaciones con filtros opcionales (vacante_id, estado) y orden por recientes o afinidad
    */
   async findAll(
     filters: FilterPostulacionesDto,
   ): Promise<PostulacionAdminEntity[]> {
+    const esAfinidad = filters.orden === OrdenPostulaciones.AFINIDAD;
+
+    if (esAfinidad && filters.vacante_id === undefined) {
+      throw new BadRequestException(
+        'Para ordenar por afinidad elegí una vacante.',
+      );
+    }
+
     const where: Prisma.PostulacionWhereInput = {};
 
     if (filters.vacante_id !== undefined) {
@@ -97,36 +139,38 @@ export class PostulacionesService {
     const postulaciones = await this.prisma.postulacion.findMany({
       where,
       orderBy: { creado_en: 'desc' },
-      include: {
-        vacante: {
-          select: {
-            id: true,
-            titulo: true,
-            activa: true,
-          },
-        },
-      },
+      include: POSTULACION_ADMIN_INCLUDE,
     });
 
-    return postulaciones.map((item) => new PostulacionAdminEntity(item));
+    if (!esAfinidad) {
+      return postulaciones.map((item) => new PostulacionAdminEntity(item));
+    }
+
+    const ordenadas = this.ordenarPorAfinidad(postulaciones);
+    let posicionActual = 0;
+
+    return ordenadas.map((item) => {
+      const posicion =
+        this.obtenerPuntajeValido(item.analisis) !== null
+          ? ++posicionActual
+          : null;
+
+      return new PostulacionAdminEntity({
+        ...item,
+        posicion,
+      });
+    });
   }
+
 
   /**
    * GET /api/postulaciones/:id
-   * Obtiene la ficha completa de una postulación (incluyendo cv_url y cv_nombre_original)
+   * Obtiene la ficha completa de una postulación
    */
   async findOne(id: number): Promise<PostulacionAdminEntity> {
     const postulacion = await this.prisma.postulacion.findUnique({
       where: { id },
-      include: {
-        vacante: {
-          select: {
-            id: true,
-            titulo: true,
-            activa: true,
-          },
-        },
-      },
+      include: POSTULACION_ADMIN_INCLUDE,
     });
 
     if (!postulacion) {
@@ -135,6 +179,7 @@ export class PostulacionesService {
 
     return new PostulacionAdminEntity(postulacion);
   }
+
 
   /**
    * PATCH /api/postulaciones/:id/estado
@@ -151,15 +196,7 @@ export class PostulacionesService {
       data: {
         estado: dto.estado,
       },
-      include: {
-        vacante: {
-          select: {
-            id: true,
-            titulo: true,
-            activa: true,
-          },
-        },
-      },
+      include: POSTULACION_ADMIN_INCLUDE,
     });
 
     return new PostulacionAdminEntity(actualizada);
@@ -196,4 +233,42 @@ export class PostulacionesService {
       uploadStream.end(buffer);
     });
   }
+
+
+  // Métodos privados
+
+  private obtenerPuntajeValido(
+    analisis: { estado: EstadoAnalisis; puntaje: number | null } | null,
+  ): number | null {
+    if (
+      analisis?.estado === EstadoAnalisis.COMPLETADO &&
+      typeof analisis.puntaje === 'number'
+    ) {
+      return analisis.puntaje;
+    }
+
+    return null;
+  }
+
+  private ordenarPorAfinidad<
+    T extends {
+      creado_en: Date;
+      analisis: { estado: EstadoAnalisis; puntaje: number | null } | null;
+    },
+  >(postulaciones: T[]): T[] {
+    return [...postulaciones].sort((a, b) => {
+      const puntajeA = this.obtenerPuntajeValido(a.analisis);
+      const puntajeB = this.obtenerPuntajeValido(b.analisis);
+
+      if (puntajeA !== null && puntajeB === null) return -1;
+      if (puntajeA === null && puntajeB !== null) return 1;
+
+      if (puntajeA !== null && puntajeB !== null && puntajeA !== puntajeB) {
+        return puntajeB - puntajeA;
+      }
+
+      return a.creado_en.getTime() - b.creado_en.getTime();
+    });
+  }
+
 }

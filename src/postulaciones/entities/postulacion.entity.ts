@@ -1,4 +1,4 @@
-import { EstadoPostulacion, Postulacion } from '@prisma/client';
+import { EstadoAnalisis, EstadoPostulacion, Postulacion } from '@prisma/client';
 
 export type PostulacionPublicaProps = Pick<
   Postulacion,
@@ -20,9 +20,53 @@ export interface VacanteResumenProps {
   activa?: boolean;
 }
 
+export interface VacanteConRequisitosProps extends VacanteResumenProps {
+  requisitos_actualizados_en?: Date | null;
+}
+
+export interface AnalisisRawProps {
+  estado: EstadoAnalisis;
+  puntaje: number | null;
+  resumen_experiencia: string | null;
+  justificacion: string | null;
+  error_detalle: string | null;
+  modelo: string | null;
+  analizado_en: Date | null;
+}
+
+export interface AnalisisAdminView extends AnalisisRawProps {
+  desactualizado: boolean;
+}
+
 export type PostulacionAdminProps = Postulacion & {
-  vacante?: VacanteResumenProps;
+  vacante?: VacanteConRequisitosProps;
+  analisis?: AnalisisRawProps | null;
+  posicion?: number | null;
 };
+
+export function mapearAnalisisAdmin(
+  analisis: AnalisisRawProps | null | undefined,
+  requisitosActualizadosEn?: Date | null,
+): AnalisisAdminView | null {
+  if (!analisis) return null;
+
+  const desactualizado = Boolean(
+    analisis.analizado_en &&
+      requisitosActualizadosEn &&
+      analisis.analizado_en.getTime() < requisitosActualizadosEn.getTime(),
+  );
+
+  return {
+    estado: analisis.estado,
+    puntaje: analisis.puntaje,
+    resumen_experiencia: analisis.resumen_experiencia,
+    justificacion: analisis.justificacion,
+    error_detalle: analisis.error_detalle,
+    modelo: analisis.modelo,
+    analizado_en: analisis.analizado_en,
+    desactualizado,
+  };
+}
 
 export class PostulacionPublicaEntity {
   id: number;
@@ -64,6 +108,8 @@ export class PostulacionAdminEntity {
   creado_en: Date;
   actualizado_en: Date;
   vacante?: VacanteResumenProps;
+  analisis: AnalisisAdminView | null;
+  posicion?: number | null;
 
   constructor(partial: PostulacionAdminProps) {
     this.id = partial.id;
@@ -78,8 +124,24 @@ export class PostulacionAdminEntity {
     this.estado = partial.estado;
     this.creado_en = partial.creado_en;
     this.actualizado_en = partial.actualizado_en;
+
     if (partial.vacante) {
-      this.vacante = partial.vacante;
+      this.vacante = {
+        id: partial.vacante.id,
+        titulo: partial.vacante.titulo,
+        ...(partial.vacante.activa !== undefined
+          ? { activa: partial.vacante.activa }
+          : {}),
+      };
+    }
+
+    this.analisis = mapearAnalisisAdmin(
+      partial.analisis,
+      partial.vacante?.requisitos_actualizados_en,
+    );
+
+    if (partial.posicion !== undefined) {
+      this.posicion = partial.posicion;
     }
   }
 }

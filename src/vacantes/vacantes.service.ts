@@ -6,18 +6,18 @@ import { VacantePrivadaEntity, vacantePrivadaInclude, VacantePublicaEntity, vaca
 @Injectable()
 export class VacantesService {
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * GET /api/vacantes/publicas
    * Devuelve únicamente las vacantes activas con id, título, descripción y requisitos
    */
   async findAllPublicas(): Promise<VacantePublicaEntity[]> {
-    
+
     const vacantes = await this.prisma.vacante.findMany({
       where: { activa: true },
       select: vacantePublicaSelect,
-      orderBy: { creado_en: 'desc'},
+      orderBy: { creado_en: 'desc' },
     });
 
     return vacantes.map((v) => new VacantePublicaEntity(v));
@@ -61,8 +61,18 @@ export class VacantesService {
    * PATCH /api/vacantes/:id
    * Actualiza parcialmente título, descripción, requisitos o estado activa
    */
-  async update(id: number, dto: UpdateVacanteDto): Promise<VacantePrivadaEntity> {
-    await this.obtenerVacanteOrThrow(id);
+  async update(
+    id: number,
+    dto: UpdateVacanteDto,
+  ): Promise<VacantePrivadaEntity> {
+    const vacanteActual = await this.obtenerVacanteOrThrow(id);
+
+    const cambioContenido =
+      (dto.titulo !== undefined && dto.titulo !== vacanteActual.titulo) ||
+      (dto.descripcion !== undefined &&
+        dto.descripcion !== vacanteActual.descripcion) ||
+      (dto.requisitos !== undefined &&
+        dto.requisitos !== vacanteActual.requisitos);
 
     const vacanteActualizada = await this.prisma.vacante.update({
       where: { id },
@@ -71,6 +81,7 @@ export class VacantesService {
         ...(dto.descripcion !== undefined && { descripcion: dto.descripcion }),
         ...(dto.requisitos !== undefined && { requisitos: dto.requisitos }),
         ...(dto.activa !== undefined && { activa: dto.activa }),
+        ...(cambioContenido && { requisitos_actualizados_en: new Date() }),
       },
       include: vacantePrivadaInclude,
     });

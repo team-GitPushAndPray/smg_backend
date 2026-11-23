@@ -5,11 +5,15 @@ import { Modulo } from '../auth/decorators/modulo.decorator.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { CreatePostulacionDto, FilterPostulacionesDto, UpdateEstadoPostulacionDto } from './dto/index.js';
 import { PostulacionesService } from './postulaciones.service.js';
+import { PostulacionesAnalisisService } from './postulaciones-analisis.service.js';
 
 @Modulo('POSTULACIONES')
 @Controller('postulaciones')
 export class PostulacionesController {
-  constructor(private readonly postulacionesService: PostulacionesService) {}
+  constructor(
+    private readonly postulacionesService: PostulacionesService,
+    private readonly postulacionesAnalisisService: PostulacionesAnalisisService,
+  ) {}
 
   /**
    * POST /api/postulaciones
@@ -60,5 +64,15 @@ export class PostulacionesController {
     @Body() updateEstadoDto: UpdateEstadoPostulacionDto,
   ) {
     return this.postulacionesService.updateEstado(id, updateEstadoDto);
+  }
+
+  /**
+   * POST /api/postulaciones/:id/analizar
+   */
+  @Modulo('POSTULACIONES', { editar: true })
+  @Post(':id/analizar')
+  @HttpCode(HttpStatus.OK)
+  analizar(@Param('id', ParseIntPipe) id: number) {
+    return this.postulacionesAnalisisService.reanalizar(id);
   }
 }

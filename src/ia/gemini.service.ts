@@ -4,7 +4,7 @@ import { AnalizarCVParams, GenerarJsonParams, GenerarJsonResultado, ResultadoAna
 import { construirMensajeVacante, SYSTEM_INSTRUCTION_ANALISIS_CV, VERSION_PROMPT_ANALISIS } from './prompts/analisis-cv.prompt.js';
 
 const TIMEOUT_MS = 25_000;
-const MODELO_DEFAULT = 'gemini-3.1-flash';
+const MODELO_DEFAULT = 'gemini-3.5-flash-lite';
 
 interface RespuestaAnalisisRaw {
   puntaje: unknown;

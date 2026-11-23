@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, Equals } from "class-validator";
 
 
 const trimString = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() : value;
@@ -66,5 +66,16 @@ export class CreatePostulacionDto {
     @IsString()
     @MaxLength(255)
     website?: string;
+
+    @Transform(({ obj }) => {
+        const raw = obj?.acepta_tratamiento;
+        if (raw === true || raw === 'true') return true;
+        if (raw === false || raw === 'false') return false;
+        return raw;
+    })
+    @Equals(true, {
+        message: 'Tenés que aceptar el uso de tus datos para postularte.',
+    })
+    acepta_tratamiento: boolean;
 
 }

@@ -5,10 +5,14 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreatePostulacionDto, FilterPostulacionesDto, UpdateEstadoPostulacionDto } from './dto/index.js';
 import { PostulacionAdminEntity, PostulacionPublicaEntity } from './entities/postulacion.entity.js';
 import { validarArchivoPdf } from './validators/pdf-file.validator.js';
+import { PostulacionesAnalisisService } from './postulaciones-analisis.service.js';
 
 @Injectable()
 export class PostulacionesService {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postulacionesAnalisisService: PostulacionesAnalisisService,
+  ) {
     if (process.env.CLOUDINARY_CLOUD_NAME) {
       cloudinary.config({
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -69,8 +73,17 @@ export class PostulacionesService {
         cv_url: uploadResult.secure_url,
         cv_nombre_original: nombreOriginalLimpio,
         estado: EstadoPostulacion.NUEVO,
+        consentimiento_en: new Date(),
+        analisis: {
+          create: {},
+        },
       },
     });
+
+    await this.postulacionesAnalisisService.analizar(
+      nuevaPostulacion.id,
+      file.buffer,
+    );
 
     return new PostulacionPublicaEntity(nuevaPostulacion);
   }
